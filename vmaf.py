@@ -21,7 +21,7 @@ def vmaf_compare(reference, distorted) -> float:
         str(FFMPEG),
         "-i", distorted,
         "-i", reference,
-        "-lavfi", f"libvmaf=log_fmt=json:log_path={output_file}",
+        "-lavfi", f"libvmaf=model=version=vmaf_v1.0.16_3d0h:log_fmt=json:log_path={output_file}",
         "-f", "null",
         "-"
     ]
