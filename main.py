@@ -3,7 +3,7 @@ import tempfile
 import shutil
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from vmaf import vmaf_compare
+from vmaf import video_compare
 from ffprobe import (is_valid_video, get_video_dimensions, get_video_duration, get_video_metadata, are_durations_compatible)
 
 MAX_FILE_SIZE = 250 * 1024 * 1024  # File limit: 250 MB in bytes
@@ -115,7 +115,7 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
             video_metadata = get_video_metadata(ref_file.name)
 
             try:
-                result = vmaf_compare(ref_file.name, dist_file.name)
+                result = video_compare(ref_file.name, dist_file.name)
             except CalledProcessError:  # Error handling #4: catch CalledProcessError raised by subprocess.run() in vmaf_compare() if FFmpeg fails to execute properly
                 raise HTTPException(
                     status_code=400,
@@ -129,7 +129,7 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
 
 
     return {
-        "sherboa-engine version": "1.0.0",
-        "vmaf": result,
+        "sherboa-engine version": "1.1.0",
+        **result,
         "video": video_metadata
     }
