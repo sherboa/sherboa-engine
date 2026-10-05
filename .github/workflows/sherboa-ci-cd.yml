@@ -59,7 +59,7 @@ jobs:
             --instance-ids i-082236ea5c1088e9f \
             --document-name AWS-RunShellScript \
             --comment "Deploy Sherboa ${IMAGE_TAG}" \
-            --parameters "{\"commands\":[\"set -e\",\"aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${IMAGE_URI}\",\"docker pull ${IMAGE_URI}:${IMAGE_TAG}\",\"docker rm -f sherboa-engine 2>/dev/null || true\",\"docker run -d --name sherboa-engine --restart unless-stopped -p 8000:8000 ${IMAGE_URI}:${IMAGE_TAG}\",\"for i in {1..10}; do curl -f http://localhost:8000/ && break; sleep 2; done\",\"docker image prune -af\"]}" \
+            --parameters "{\"commands\":[\"set -e\",\"aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${IMAGE_URI}\",\"docker pull ${IMAGE_URI}:${IMAGE_TAG}\",\"docker network inspect sherboa-network >/dev/null 2>&1 || docker network create sherboa-network\",\"docker rm -f sherboa-engine 2>/dev/null || true\",\"docker run -d --name sherboa-engine --restart unless-stopped --network sherboa-network -p 8000:8000 ${IMAGE_URI}:${IMAGE_TAG}\",\"for i in {1..10}; do curl -f http://localhost:8000/ && break; sleep 2; done\",\"docker image prune -af\"]}" \
             --query 'Command.CommandId' \
             --output text)
 
