@@ -44,9 +44,17 @@ def vmaf_compare(reference, distorted) -> float:
 
 
     try:
-        mean = data["pooled_metrics"]["vmaf"]["mean"]
+        vmaf_data = data["pooled_metrics"]["vmaf"]  # Access the VMAF data from the JSON structure
+
+        mean = vmaf_data["mean"]  # Access the mean VMAF score from the JSON structure
+        minimum = vmaf_data["min"]  # Access the minimum VMAF score from the JSON structure
+        maximum = vmaf_data["max"]  # Access the maximum VMAF score from the JSON structure
     except KeyError:
         raise RuntimeError("VMAF output JSON does not contain expected keys.")
 
-    score = round(mean, 3)  # Round the VMAF score to three decimal places for better readability
-    return score
+
+    return {
+        "mean": round(mean, 3),
+        "min": round(minimum, 3),
+        "max": round(maximum, 3)
+    }
