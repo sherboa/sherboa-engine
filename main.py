@@ -4,7 +4,7 @@ import shutil
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from vmaf import vmaf_compare
-from ffprobe import is_valid_video, get_video_dimensions, get_video_duration, are_durations_compatible
+from ffprobe import (is_valid_video, get_video_dimensions, get_video_duration, get_video_metadata, are_durations_compatible)
 
 MAX_FILE_SIZE = 250 * 1024 * 1024  # File limit: 250 MB in bytes
 FRONTEND_URL = "https://sherboa.com"
@@ -112,6 +112,7 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
                     detail="Video durations are not compatible"
                 )
 
+            video_metadata = get_video_metadata(ref_file.name)
 
             try:
                 result = vmaf_compare(ref_file.name, dist_file.name)
@@ -126,4 +127,8 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
                     detail=str(e)
                 )
 
-    return {"vmaf": result}
+
+    return {
+    "vmaf": result,
+    "video": video_metadata
+    }

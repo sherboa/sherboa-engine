@@ -196,3 +196,26 @@ def get_video_frame_count(file_path: str) -> int:
 
     frames = int(result.stdout.strip())
     return frames
+
+
+
+# FUNCTION TO GET VIDEO METADATA
+def get_video_metadata(file_path: str) -> dict:
+    """
+    Returns basic metadata from the first video stream.
+    Parameters:
+    - file_path: Path to the video file.
+    Returns:
+    - A dictionary containing duration, width, height and fps.
+    """
+
+    width, height = get_video_dimensions(file_path)
+    duration = get_video_duration(file_path)
+    fps = get_video_r_fps(file_path)
+
+    return {
+        "duration": round(duration, 3),
+        "width": width,
+        "height": height,
+        "fps": round(fps, 3)
+    }
