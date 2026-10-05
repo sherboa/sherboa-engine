@@ -129,6 +129,7 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
 
 
     return {
-    "vmaf": result,
-    "video": video_metadata
+        "sherboa-engine version": "1.0.0",
+        "vmaf": result,
+        "video": video_metadata
     }
