@@ -73,10 +73,16 @@ def video_compare(reference, distorted) -> dict:
     try:
         vmaf_metrics = vmaf_data["pooled_metrics"]["vmaf"]
 
+        vmaf_per_frame = [
+            round(frame["metrics"]["vmaf"], 3)
+            for frame in vmaf_data["frames"]
+        ]
+
         vmaf = {
             "mean": round(vmaf_metrics["mean"], 3),
             "min": round(vmaf_metrics["min"], 3),
-            "max": round(vmaf_metrics["max"], 3)
+            "max": round(vmaf_metrics["max"], 3),
+            "per_frame": vmaf_per_frame
         }
     except KeyError:
         raise RuntimeError(
@@ -95,10 +101,23 @@ def video_compare(reference, distorted) -> dict:
     if not psnr_match:
         raise RuntimeError("FFmpeg output does not contain valid PSNR values.")
 
+    try:
+        with open(psnr_output, "r") as file:
+            psnr_data = file.readlines()
+    except FileNotFoundError:
+        raise RuntimeError("PSNR output file not found.")
+
+    psnr_per_frame = [
+        round(float(re.search(r"psnr_avg:(\S+)", line).group(1)), 3)
+        for line in psnr_data
+        if re.search(r"psnr_avg:(\S+)", line)
+    ]
+
     psnr = {
         "mean": round(float(psnr_match.group(4)), 3),
         "min": round(float(psnr_match.group(5)), 3),
-        "max": round(float(psnr_match.group(6)), 3)
+        "max": round(float(psnr_match.group(6)), 3),
+        "per_frame": psnr_per_frame
     }
 
     # ---------------------------------------------------------
