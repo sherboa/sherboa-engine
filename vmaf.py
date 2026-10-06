@@ -140,6 +140,9 @@ def video_compare(reference, distorted) -> dict:
     }
 
     return {
+        "sherboa-engine": {
+            "version": "1.2.0"
+        },
         "vmaf": vmaf,
         "psnr": psnr,
         "ssim": ssim
