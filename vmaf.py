@@ -2,8 +2,37 @@ import subprocess
 import json
 import re
 from ffprobe import get_video_metadata
+import csv
+import io
+
 
 FFMPEG = "ffmpeg"
+
+
+
+# FUNCTION TO GENERATE A CSV FILE
+def generate_csv(result: dict) -> str:
+    """
+    Generate a CSV string containing per-frame VMAF and PSNR values.
+    Parameters:
+    - result (dict): Analysis results containing per-frame VMAF and PSNR data.
+    Returns:
+    - str: CSV-formatted string with frame, VMAF, and PSNR values.
+    """
+    
+    output = io.StringIO()
+
+    writer = csv.writer(output)
+    writer.writerow(["frame", "vmaf", "psnr"])
+
+    vmaf_frames = result["vmaf"]["per_frame"]
+    psnr_frames = result["psnr"]["per_frame"]
+
+    for frame, (vmaf, psnr) in enumerate(zip(vmaf_frames, psnr_frames), start=1):
+        writer.writerow([frame, vmaf, psnr])
+
+    return output.getvalue()
+
 
 
 # FUNCTION TO COMPUTE VMAF, PSNR AND SSIM

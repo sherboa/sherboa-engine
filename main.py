@@ -1,9 +1,9 @@
 from subprocess import CalledProcessError
 import tempfile
 import shutil
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from vmaf import video_compare
+from vmaf import video_compare, generate_csv
 from ffprobe import (is_valid_video, get_video_dimensions, get_video_duration, get_video_metadata, are_durations_compatible)
 
 MAX_FILE_SIZE = 250 * 1024 * 1024  # File limit: 250 MB in bytes
@@ -30,7 +30,7 @@ def home():  # Define the root endpoint function
 @app.post("/vmaf")  # Define a POST endpoint for computing VMAF
 
 
-def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = File(...)) -> dict:  # Define the endpoint function to compute VMAF
+def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = File(...), format: str = "json") -> dict:  # Define the endpoint function to compute VMAF
     """
     This endpoint computes the VMAF score between a reference video and a distorted video uploaded by the user.
     It uses the vmaf_compare function to perform the computation.
@@ -40,6 +40,12 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
     Returns:
     - A dictionary containing the computed VMAF score.
     """
+
+    if format not in {"json", "csv"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid format. Supported formats: json, csv"
+        )
 
     print(">>> FUNCTION 'calculate_vmaf' EXECUTED <<<", flush=True)  # Print a message indicating that the VMAF calculation has started
 
@@ -127,6 +133,17 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
                     detail=str(e)
                 )
 
+
+    csv_data = generate_csv(result)
+
+    if format == "csv":
+        return Response(
+            content=csv_data,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": "attachment; filename=results.csv"
+            }
+        )
 
     return {
         **result,
