@@ -1,6 +1,7 @@
 import subprocess
 import json
 import re
+from ffprobe import get_video_metadata
 
 FFMPEG = "ffmpeg"
 
@@ -15,6 +16,8 @@ def video_compare(reference, distorted) -> dict:
     Returns:
     - A dictionary containing VMAF, PSNR and SSIM results.
     """
+
+    reference_metadata = get_video_metadata(reference)
 
     vmaf_output = "/tmp/vmaf.json"
     psnr_output = "/tmp/psnr.log"
@@ -139,11 +142,16 @@ def video_compare(reference, distorted) -> dict:
         "v": round(float(ssim_match.group(3)), 3)
     }
 
+    # ---------------------------------------------------------
+    # RESULTS
+    # ---------------------------------------------------------
+
     return {
         "sherboa-engine": {
-            "version": "1.2.0"
+            "version": "1.3.0"
         },
         "vmaf": vmaf,
         "psnr": psnr,
-        "ssim": ssim
+        "ssim": ssim,
+        "video": reference_metadata
     }
