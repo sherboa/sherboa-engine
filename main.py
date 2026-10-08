@@ -3,7 +3,7 @@ import tempfile
 import shutil
 from fastapi import FastAPI, UploadFile, File, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from vmaf import video_compare, generate_csv
+from vmaf import video_compare, generate_csv, generate_xml
 from ffprobe import (is_valid_video, get_video_dimensions, get_video_duration, get_video_metadata, are_durations_compatible)
 
 MAX_FILE_SIZE = 250 * 1024 * 1024  # File limit: 250 MB in bytes
@@ -41,10 +41,10 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
     - A dictionary containing the computed VMAF score.
     """
 
-    if format not in {"json", "csv"}:
+    if format not in {"json", "csv", "xml"}:
         raise HTTPException(
             status_code=400,
-            detail="Invalid format. Supported formats: json, csv"
+            detail="Invalid format. Supported formats: json, csv, xml"
         )
 
     print(">>> FUNCTION 'calculate_vmaf' EXECUTED <<<", flush=True)  # Print a message indicating that the VMAF calculation has started
@@ -134,14 +134,26 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
                 )
 
 
-    csv_data = generate_csv(result)
 
     if format == "csv":
+        csv_data = generate_csv(result)
+
         return Response(
             content=csv_data,
             media_type="text/csv",
             headers={
                 "Content-Disposition": "attachment; filename=results.csv"
+            }
+        )
+
+    if format == "xml":
+        xml_data = generate_xml(result)
+
+        return Response(
+            content=xml_data,
+            media_type="application/xml",
+            headers={
+                "Content-Disposition": "attachment; filename=results.xml"
             }
         )
 

@@ -1,9 +1,10 @@
 import subprocess
 import json
 import re
-from ffprobe import get_video_metadata
 import csv
 import io
+import xml.etree.ElementTree as ET
+from ffprobe import get_video_metadata
 
 
 FFMPEG = "ffmpeg"
@@ -32,6 +33,66 @@ def generate_csv(result: dict) -> str:
         writer.writerow([frame, vmaf, psnr])
 
     return output.getvalue()
+
+
+
+# FUNCTION TO GENERATE A XML FILE
+def generate_xml(result: dict) -> str:
+    """
+    Generate an XML string containing the complete analysis results.
+    Parameters:
+    - result (dict): Analysis results containing VMAF, PSNR, SSIM,
+      and video metadata.
+    Returns:
+    - str: XML-formatted analysis results.
+    """
+
+    root = ET.Element("sherboa-analysis")
+
+    engine = ET.SubElement(root, "sherboa-engine")
+    engine.set("version", result["sherboa-engine"]["version"])
+
+    vmaf = ET.SubElement(root, "vmaf")
+    ET.SubElement(vmaf, "mean").text = str(result["vmaf"]["mean"])
+    ET.SubElement(vmaf, "min").text = str(result["vmaf"]["min"])
+    ET.SubElement(vmaf, "max").text = str(result["vmaf"]["max"])
+
+    vmaf_frames = ET.SubElement(vmaf, "per-frame")
+
+    for frame, value in enumerate(result["vmaf"]["per_frame"], start=1):
+        ET.SubElement(
+            vmaf_frames,
+            "frame",
+            number=str(frame)
+        ).text = str(value)
+
+    psnr = ET.SubElement(root, "psnr")
+    ET.SubElement(psnr, "mean").text = str(result["psnr"]["mean"])
+    ET.SubElement(psnr, "min").text = str(result["psnr"]["min"])
+    ET.SubElement(psnr, "max").text = str(result["psnr"]["max"])
+
+    psnr_frames = ET.SubElement(psnr, "per-frame")
+
+    for frame, value in enumerate(result["psnr"]["per_frame"], start=1):
+        ET.SubElement(
+            psnr_frames,
+            "frame",
+            number=str(frame)
+        ).text = str(value)
+
+    ssim = ET.SubElement(root, "ssim")
+    ET.SubElement(ssim, "global").text = str(result["ssim"]["global (all)"])
+    ET.SubElement(ssim, "y").text = str(result["ssim"]["y"])
+    ET.SubElement(ssim, "u").text = str(result["ssim"]["u"])
+    ET.SubElement(ssim, "v").text = str(result["ssim"]["v"])
+
+    video = ET.SubElement(root, "video")
+    ET.SubElement(video, "duration").text = str(result["video"]["duration"])
+    ET.SubElement(video, "width").text = str(result["video"]["width"])
+    ET.SubElement(video, "height").text = str(result["video"]["height"])
+    ET.SubElement(video, "fps").text = str(result["video"]["fps"])
+
+    return ET.tostring(root, encoding="unicode")
 
 
 
