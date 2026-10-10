@@ -5,6 +5,9 @@ import csv
 import io
 import xml.etree.ElementTree as ET
 from ffprobe import get_video_metadata
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 
 FFMPEG = "ffmpeg"
@@ -93,6 +96,42 @@ def generate_xml(result: dict) -> str:
     ET.SubElement(video, "fps").text = str(result["video"]["fps"])
 
     return ET.tostring(root, encoding="unicode")
+
+
+
+# FUNCTION TO GENERATE A VMAF GRAPH
+def generate_vmaf_graph(result: dict) -> bytes:
+    """
+    Generate a PNG graph containing per-frame VMAF values.
+    Parameters:
+    - result (dict): Analysis results containing per-frame VMAF data.
+    Returns:
+    - bytes: PNG image data.
+    """
+
+    vmaf_frames = result["vmaf"]["per_frame"]
+    frames = range(1, len(vmaf_frames) + 1)
+
+    figure, axis = plt.subplots(figsize=(12, 5))
+
+    axis.plot(frames, vmaf_frames, linewidth=1.5)
+    axis.set_title("VMAF per frame")
+    axis.set_xlabel("Frame")
+    axis.set_ylabel("VMAF score")
+    axis.set_ylim(0, 100)
+    axis.grid(True, alpha=0.3)
+
+    figure.tight_layout()
+
+    output = io.BytesIO()
+
+    try:
+        figure.savefig(output, format="png", dpi=150)
+    finally:
+        plt.close(figure)
+
+    output.seek(0)
+    return output.getvalue()
 
 
 

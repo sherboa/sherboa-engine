@@ -37,9 +37,6 @@ jobs:
           role-to-assume: arn:aws:iam::557643338880:role/SherboaGitHubActionsRole
           aws-region: us-east-1
 
-      - name: Build Docker image   # Build the Docker image for the sherboa-engine using the Dockerfile in the repository
-        run: docker build -t sherboa-engine:ci .
-
       - name: Login to Amazon ECR   # Authenticate Docker to the Amazon ECR registry to allow pushing the built image
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
