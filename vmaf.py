@@ -170,6 +170,42 @@ def generate_psnr_graph(result: dict) -> bytes:
 
 
 
+# FUNCTION TO GENERATE AN SSIM GRAPH
+def generate_ssim_graph(result: dict) -> bytes:
+    """
+    Generate a PNG graph containing per-frame SSIM values.
+    Parameters:
+    - result (dict): Analysis results containing per-frame SSIM data.
+    Returns:
+    - bytes: PNG image data.
+    """
+
+    ssim_frames = result["ssim"]["per_frame"]
+    frames = range(1, len(ssim_frames) + 1)
+
+    figure, axis = plt.subplots(figsize=(12, 5))
+
+    axis.plot(frames, ssim_frames, color="green", linewidth=1.5)
+    axis.set_title("SSIM per frame")
+    axis.set_xlabel("Frame")
+    axis.set_ylabel("SSIM score")
+    axis.set_ylim(0, 1)
+    axis.grid(True, alpha=0.3)
+
+    figure.tight_layout()
+
+    output = io.BytesIO()
+
+    try:
+        figure.savefig(output, format="png", dpi=150)
+    finally:
+        plt.close(figure)
+
+    output.seek(0)
+    return output.getvalue()
+
+
+
 # FUNCTION TO COMPUTE VMAF, PSNR AND SSIM
 def video_compare(reference, distorted) -> dict:
     """
@@ -217,6 +253,10 @@ def video_compare(reference, distorted) -> dict:
         )
 
         ffmpeg_output = result.stderr
+
+        with open(ssim_output, "r", encoding="utf-8") as file:
+            ssim_log = file.readlines()
+
     except subprocess.TimeoutExpired:
         raise RuntimeError(
             "Video quality analysis timed out. "
@@ -291,6 +331,19 @@ def video_compare(reference, distorted) -> dict:
     # SSIM
     # ---------------------------------------------------------
 
+    ssim_frames = []
+
+    for line in ssim_log:
+        match = re.search(r"All:(\S+)", line)
+
+        if match:
+            ssim_frames.append(float(match.group(1)))
+
+    if not ssim_frames:
+        raise RuntimeError(
+            "SSIM log does not contain valid per-frame values."
+        )
+
     ssim_match = re.search(
         r"SSIM Y:(\S+) .*?U:(\S+) .*?V:(\S+) .*?All:(\S+)",
         ffmpeg_output
@@ -303,7 +356,8 @@ def video_compare(reference, distorted) -> dict:
         "global (all)": round(float(ssim_match.group(4)), 3),
         "y": round(float(ssim_match.group(1)), 3),
         "u": round(float(ssim_match.group(2)), 3),
-        "v": round(float(ssim_match.group(3)), 3)
+        "v": round(float(ssim_match.group(3)), 3),
+        "per_frame": ssim_frames
     }
 
     # ---------------------------------------------------------
