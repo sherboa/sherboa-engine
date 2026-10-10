@@ -3,7 +3,7 @@ import tempfile
 import shutil
 from fastapi import FastAPI, UploadFile, File, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from vmaf import video_compare, generate_csv, generate_xml, generate_vmaf_graph
+from vmaf import (video_compare, generate_csv, generate_xml, generate_vmaf_graph, generate_psnr_graph)
 from ffprobe import (is_valid_video, get_video_dimensions, get_video_duration, get_video_metadata, are_durations_compatible)
 
 MAX_FILE_SIZE = 250 * 1024 * 1024  # File limit: 250 MB in bytes
@@ -42,10 +42,10 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
     """
 
 
-    if format not in {"json", "csv", "xml", "png"}:
+    if format not in {"json", "csv", "xml", "png", "psnr_png"}:
         raise HTTPException(
             status_code=400,
-            detail="Invalid format. Supported formats: json, csv, xml, png"
+            detail="Invalid format. Supported formats: json, csv, xml, png, psnr_png"
         )
 
     print(">>> FUNCTION 'calculate_vmaf' EXECUTED <<<", flush=True)  # Print a message indicating that the VMAF calculation has started
@@ -168,6 +168,18 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
                 "Content-Disposition": "attachment; filename=vmaf-graph.png"
             }
         )
+
+    if format == "psnr_png":
+        png_data = generate_psnr_graph(result)
+
+        return Response(
+            content=png_data,
+            media_type="image/png",
+            headers={
+                "Content-Disposition": "attachment; filename=psnr-graph.png"
+            }
+        )
+
 
     return {
         **result,

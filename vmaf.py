@@ -135,6 +135,41 @@ def generate_vmaf_graph(result: dict) -> bytes:
 
 
 
+# FUNCTION TO GENERATE A PSNR GRAPH
+def generate_psnr_graph(result: dict) -> bytes:
+    """
+    Generate a PNG graph containing per-frame PSNR values.
+    Parameters:
+    - result (dict): Analysis results containing per-frame PSNR data.
+    Returns:
+    - bytes: PNG image data.
+    """
+
+    psnr_frames = result["psnr"]["per_frame"]
+    frames = range(1, len(psnr_frames) + 1)
+
+    figure, axis = plt.subplots(figsize=(12, 5))
+
+    axis.plot(frames, psnr_frames, color="red", linewidth=1.5)
+    axis.set_title("PSNR per frame")
+    axis.set_xlabel("Frame")
+    axis.set_ylabel("PSNR (dB)")
+    axis.grid(True, alpha=0.3)
+
+    figure.tight_layout()
+
+    output = io.BytesIO()
+
+    try:
+        figure.savefig(output, format="png", dpi=150)
+    finally:
+        plt.close(figure)
+
+    output.seek(0)
+    return output.getvalue()
+
+
+
 # FUNCTION TO COMPUTE VMAF, PSNR AND SSIM
 def video_compare(reference, distorted) -> dict:
     """
