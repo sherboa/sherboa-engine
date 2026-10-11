@@ -1,9 +1,13 @@
+# This is the main FastAPI application file for the VMAF, PSNR, and SSIM API. It defines the endpoints and handles video file uploads, validation, and quality metric computation.
+
 from subprocess import CalledProcessError
 import tempfile
 import shutil
 from fastapi import FastAPI, UploadFile, File, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from vmaf import (video_compare, generate_csv, generate_xml, generate_vmaf_graph, generate_psnr_graph, generate_ssim_graph)
+from quality_metrics import (video_compare)
+from graphs import (generate_vmaf_graph, generate_psnr_graph, generate_ssim_graph)
+from exports import (generate_csv, generate_xml)
 from ffprobe import (is_valid_video, get_video_dimensions, get_video_duration, get_video_metadata, are_durations_compatible)
 
 MAX_FILE_SIZE = 250 * 1024 * 1024  # File limit: 250 MB in bytes
@@ -42,7 +46,7 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
     """
 
 
-    if format not in {"json", "csv", "xml", "png", "psnr_png", "ssim_png"}:
+    if format not in {"json", "csv", "xml", "png", "psnr_png", "ssim_png"}:  # Error handling #6: check if the requested output format is valid
         raise HTTPException(
             status_code=400,
             detail="Invalid format. Supported formats: json, csv, xml, png, psnr_png, ssim_png"
@@ -136,63 +140,63 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
 
 
 
-    if format == "csv":
-        csv_data = generate_csv(result)
+    if format == "csv":  # Generate a CSV file containing per-frame VMAF and PSNR values
+        csv_data = generate_csv(result)  # Generate a CSV string containing per-frame VMAF and PSNR values using the generate_csv() function
 
         return Response(
-            content=csv_data,
-            media_type="text/csv",
+            content=csv_data,  # Return the generated CSV data as the response content
+            media_type="text/csv",  # Set the media type of the response to "text/csv" to indicate that the response contains CSV data
             headers={
                 "Content-Disposition": "attachment; filename=results.csv"
             }
         )
 
-    if format == "xml":
-        xml_data = generate_xml(result)
+    if format == "xml":  # Generate an XML file containing the complete analysis results
+        xml_data = generate_xml(result)  # Generate an XML string containing the complete analysis results using the generate_xml() function
 
         return Response(
-            content=xml_data,
-            media_type="application/xml",
+            content=xml_data,  # Return the generated XML data as the response content
+            media_type="application/xml",  # Set the media type of the response to "application/xml" to indicate that the response contains XML data
             headers={
-                "Content-Disposition": "attachment; filename=results.xml"
+                "Content-Disposition": "attachment; filename=results.xml"  # Set the Content-Disposition header to specify the filename for the downloaded XML file
             }
         )
 
-    if format == "png":
+    if format == "png":  # Generate a PNG graph containing per-frame VMAF values
         png_data = generate_vmaf_graph(result)
 
         return Response(
-            content=png_data,
-            media_type="image/png",
+            content=png_data,  # Return the generated PNG graph data as the response content
+            media_type="image/png",  # Set the media type of the response to "image/png" to indicate that the response contains a PNG image
             headers={
-                "Content-Disposition": "attachment; filename=vmaf-graph.png"
+                "Content-Disposition": "attachment; filename=vmaf-graph.png"  # Set the Content-Disposition header to specify the filename for the downloaded PNG graph
             }
         )
 
-    if format == "psnr_png":
+    if format == "psnr_png":  # Generate a PNG graph containing per-frame PSNR values
         png_data = generate_psnr_graph(result)
 
         return Response(
-            content=png_data,
-            media_type="image/png",
+            content=png_data,  # Return the generated PNG graph data as the response content
+            media_type="image/png",  # Set the media type of the response to "image/png" to indicate that the response contains a PNG image
             headers={
-                "Content-Disposition": "attachment; filename=psnr-graph.png"
+                "Content-Disposition": "attachment; filename=psnr-graph.png"  # Set the Content-Disposition header to specify the filename for the downloaded PNG graph
             }
         )
 
-    if format == "ssim_png":
+    if format == "ssim_png":  # Generate a PNG graph containing per-frame SSIM values
         png_data = generate_ssim_graph(result)
 
         return Response(
-            content=png_data,
-            media_type="image/png",
+            content=png_data,  # Return the generated PNG graph data as the response content
+            media_type="image/png",  # Set the media type of the response to "image/png" to indicate that the response contains a PNG image
             headers={
-                "Content-Disposition": "attachment; filename=ssim-graph.png"
+                "Content-Disposition": "attachment; filename=ssim-graph.png"  # Set the Content-Disposition header to specify the filename for the downloaded PNG graph
             }
         )
 
 
     return {
-        **result,
-        "video": video_metadata
+        **result,  # Merge the computed VMAF, PSNR, and SSIM results with the video metadata into a single dictionary to be returned as the API response
+        "video": video_metadata  # Include the video metadata in the response under the "video" key
     }

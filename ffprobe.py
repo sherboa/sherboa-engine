@@ -1,3 +1,5 @@
+# This module provides utility functions to extract video metadata and validate video files using ffprobe.
+
 from subprocess import CalledProcessError, run
 
 
@@ -57,7 +59,7 @@ def get_video_dimensions(file_path: str) -> tuple[int, int]:
         text=True
     )
 
-    width, height = result.stdout.strip().split("x")
+    width, height = result.stdout.strip().split("x")  # Split the output of the ffprobe command to get the width and height of the first video stream
     return int(width), int(height)
 
 
@@ -84,7 +86,7 @@ def get_video_duration(file_path: str) -> float:
         text=True
     )
 
-    duration = float(result.stdout.strip())
+    duration = float(result.stdout.strip())  # Get the duration of the video in seconds by converting the output of the ffprobe command to a float
 
     return duration
 
@@ -101,7 +103,7 @@ def are_durations_compatible(reference_duration: float, distorted_duration: floa
     - True if the duration difference is within one second, False otherwise.
     """
 
-    difference = abs(reference_duration - distorted_duration)
+    difference = abs(reference_duration - distorted_duration)  # Calculate the absolute difference between the two video durations in seconds
 
     if difference <= 1.0:  # The tolerance to consider both streams compatible in terms of duration is: 1 sec
         return True
@@ -133,8 +135,8 @@ def get_video_r_fps(file_path: str) -> float:
         text=True
     )
 
-    numerator, denominator = result.stdout.strip().split("/")
-    r_frame_rate = int(numerator) / int(denominator)
+    numerator, denominator = result.stdout.strip().split("/")  # Split the output of the ffprobe command to get the numerator and denominator of the nominal frame rate
+    r_frame_rate = int(numerator) / int(denominator)  # Calculate the nominal frame rate by dividing the numerator by the denominator to get the nominal frame rate in frames per second
 
     return r_frame_rate
 
@@ -163,8 +165,8 @@ def get_video_avg_fps(file_path: str) -> float:
         text=True
     )
 
-    numerator, denominator = result.stdout.strip().split("/")
-    avg_frame_rate =  int(numerator) / int(denominator)
+    numerator, denominator = result.stdout.strip().split("/")  # Split the output of the ffprobe command to get the numerator and denominator of the average frame rate
+    avg_frame_rate =  int(numerator) / int(denominator)  # Calculate the average frame rate by dividing the numerator by the denominator to get the average frame rate in frames per second
 
     return avg_frame_rate
 
@@ -194,7 +196,7 @@ def get_video_frame_count(file_path: str) -> int:
         text=True
     )
 
-    frames = int(result.stdout.strip())
+    frames = int(result.stdout.strip())  # Get the number of frames in the first video stream by converting the output of the ffprobe command to an integer
     return frames
 
 
@@ -209,13 +211,13 @@ def get_video_metadata(file_path: str) -> dict:
     - A dictionary containing duration, width, height and fps.
     """
 
-    width, height = get_video_dimensions(file_path)
-    duration = get_video_duration(file_path)
-    fps = get_video_r_fps(file_path)
+    width, height = get_video_dimensions(file_path)  # Get the width and height of the first video stream using the get_video_dimensions function
+    duration = get_video_duration(file_path)  # Get the duration of the first video stream using the get_video_duration function
+    fps = get_video_r_fps(file_path)  # Get the nominal frame rate of the first video stream using the get_video_r_fps function
 
     return {
-        "duration": round(duration, 3),
-        "width": width,
-        "height": height,
-        "fps": round(fps, 3)
+        "duration": round(duration, 3),  # Round the duration to 3 decimal places and store it in the "duration" key of the metadata dictionary
+        "width": width,  # Store the width of the video in the "width" key of the metadata dictionary
+        "height": height,  # Store the height of the video in the "height" key of the metadata dictionary
+        "fps": round(fps, 3)  # Round the nominal frame rate to 3 decimal places and store it in the "fps" key of the metadata dictionary
     }
