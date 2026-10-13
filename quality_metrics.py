@@ -141,7 +141,7 @@ def video_compare(reference, distorted) -> dict:
 
 
     psnr_per_frame = [  # Create a list of per-frame PSNR values by iterating through the lines in the PSNR log file and extracting the average PSNR value for each frame using a regular expression, rounding each value to 3 decimal places
-        round(float(re.search(r"psnr_avg:(\S+)", line).group(1)), 3)  # Round the average PSNR value for each frame to 3 decimal places and store it in the psnr_per_frame list
+        format_psnr(re.search(r"psnr_avg:(\S+)", line).group(1))
         for line in psnr_data  # Iterate through each line in the PSNR log file to extract the average PSNR values for each frame using a regular expression that matches the "psnr_avg" pattern in the log lines
         if re.search(r"psnr_avg:(\S+)", line)  # Only include lines that contain the "psnr_avg" pattern to ensure that we are extracting valid PSNR values for each frame
     ]
