@@ -79,7 +79,7 @@ def generate_psnr_graph(result: dict) -> bytes:
 
 
 
-# FUNCTION TO GENERATE AN SSIM GRAPH
+# FUNCTION TO GENERATE A SSIM GRAPH
 def generate_ssim_graph(result: dict) -> bytes:
     """
     Generate a PNG graph containing per-frame SSIM values.

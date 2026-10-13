@@ -9,6 +9,28 @@ from ffprobe import get_video_metadata
 FFMPEG = "ffmpeg"
 
 
+
+# FUNCTION TO CONVERT NON FINITE RESULTS
+def format_psnr(value: str) -> float | str:
+    """
+    Convert PSNR values to rounded numbers or the string 'inf'.
+    Parameters:
+    - value: A string representing a PSNR value computed by FFmpeg.
+    Returns:
+    - The PSNR value rounded to 3 decimal places as a float, or as a string ("inf" or "-inf") if the value is infinite.
+    """
+    number = float(value)
+
+    if number == float("inf"):
+        return "inf"
+
+    if number == float("-inf"):
+        return "-inf"
+
+    return round(number, 3)
+
+
+
 # FUNCTION TO COMPUTE VMAF, PSNR AND SSIM
 def video_compare(reference, distorted) -> dict:
     """
@@ -117,6 +139,7 @@ def video_compare(reference, distorted) -> dict:
     except FileNotFoundError:  # Error handling #4: catch the FileNotFoundError exception if the PSNR output file is not found, and raise a RuntimeError with a message indicating that the PSNR output file was not found.
         raise RuntimeError("PSNR output file not found.")  # Raise a RuntimeError with a message indicating that the PSNR output file was not found.
 
+
     psnr_per_frame = [  # Create a list of per-frame PSNR values by iterating through the lines in the PSNR log file and extracting the average PSNR value for each frame using a regular expression, rounding each value to 3 decimal places
         round(float(re.search(r"psnr_avg:(\S+)", line).group(1)), 3)  # Round the average PSNR value for each frame to 3 decimal places and store it in the psnr_per_frame list
         for line in psnr_data  # Iterate through each line in the PSNR log file to extract the average PSNR values for each frame using a regular expression that matches the "psnr_avg" pattern in the log lines
@@ -124,9 +147,9 @@ def video_compare(reference, distorted) -> dict:
     ]
 
     psnr = {  # Create a dictionary to hold the PSNR results, including mean, min, max, and per-frame values
-        "mean": round(float(psnr_match.group(4)), 3),  # Round the mean PSNR value to 3 decimal places and store it in the "mean" key of the psnr dictionary
-        "min": round(float(psnr_match.group(5)), 3),  # Round the minimum PSNR value to 3 decimal places and store it in the "min" key of the psnr dictionary
-        "max": round(float(psnr_match.group(6)), 3),  # Round the maximum PSNR value to 3 decimal places and store it in the "max" key of the psnr dictionary
+        "mean": format_psnr(psnr_match.group(4)),  # Check for non finite values and round the mean PSNR value to 3 decimal places and store it in the "mean" key of the psnr dictionary
+        "min": format_psnr(psnr_match.group(5)),  # Check for non finite values and round the minimum PSNR value to 3 decimal places and store it in the "min" key of the psnr dictionary
+        "max": format_psnr(psnr_match.group(6)),  # Check for non finite values and round the maximum PSNR value to 3 decimal places and store it in the "max" key of the psnr dictionary
         "per_frame": psnr_per_frame  # Store the list of per-frame PSNR values in the "per_frame" key of the psnr dictionary
     }
 
@@ -169,7 +192,7 @@ def video_compare(reference, distorted) -> dict:
 
     return {
         "sherboa-engine": {
-            "version": "1.3.0"
+            "version": "1.4.0"
         },
         "vmaf": vmaf,  # Create a dictionary to hold the VMAF results, including mean, min, max, and per-frame values
         "psnr": psnr,  # Create a dictionary to hold the PSNR results, including mean, min, max, and per-frame values
