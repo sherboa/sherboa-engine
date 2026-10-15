@@ -2,7 +2,7 @@
 
 from subprocess import CalledProcessError, run
 
-
+FFPROBE_TIMEOUT = 15  # Maximum time in seconds allowed for each ffprobe command
 
 # FUNCTION TO VALIDATE INPUT FILE
 def is_valid_video(file_path: str) -> bool:
@@ -24,7 +24,8 @@ def is_valid_video(file_path: str) -> bool:
              ],
             check=True,
             capture_output=True,
-            text=True
+            text=True,
+            timeout=FFPROBE_TIMEOUT
         )
         text_output = result.stdout.strip()  # Clean spaces and newlines
 
@@ -56,7 +57,8 @@ def get_video_dimensions(file_path: str) -> tuple[int, int]:
         ],
         check=True,
         capture_output=True,
-        text=True
+        text=True,
+        timeout=FFPROBE_TIMEOUT
     )
 
     width, height = result.stdout.strip().split("x")  # Split the output of the ffprobe command to get the width and height of the first video stream
@@ -83,7 +85,8 @@ def get_video_duration(file_path: str) -> float:
         ],
         check=True,
         capture_output=True,
-        text=True
+        text=True,
+        timeout=FFPROBE_TIMEOUT
     )
 
     duration = float(result.stdout.strip())  # Get the duration of the video in seconds by converting the output of the ffprobe command to a float
@@ -132,7 +135,8 @@ def get_video_r_fps(file_path: str) -> float:
         ],
         check=True,
         capture_output=True,
-        text=True
+        text=True,
+        timeout=FFPROBE_TIMEOUT
     )
 
     numerator, denominator = result.stdout.strip().split("/")  # Split the output of the ffprobe command to get the numerator and denominator of the nominal frame rate
@@ -162,7 +166,8 @@ def get_video_avg_fps(file_path: str) -> float:
         ],
         check=True,
         capture_output=True,
-        text=True
+        text=True,
+        timeout=FFPROBE_TIMEOUT
     )
 
     numerator, denominator = result.stdout.strip().split("/")  # Split the output of the ffprobe command to get the numerator and denominator of the average frame rate
@@ -193,7 +198,8 @@ def get_video_frame_count(file_path: str) -> int:
         ],
         check=True,
         capture_output=True,
-        text=True
+        text=True,
+        timeout=FFPROBE_TIMEOUT
     )
 
     frames = int(result.stdout.strip())  # Get the number of frames in the first video stream by converting the output of the ffprobe command to an integer

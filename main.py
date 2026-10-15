@@ -1,9 +1,10 @@
 # This is the main FastAPI application file for the VMAF, PSNR, and SSIM API. It defines the endpoints and handles video file uploads, validation, and quality metric computation.
 
-from subprocess import CalledProcessError
+import threading
+from subprocess import CalledProcessError, TimeoutExpired
 import tempfile
 import shutil
-from fastapi import FastAPI, UploadFile, File, HTTPException, Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from quality_metrics import (video_compare)
 from graphs import (generate_vmaf_graph, generate_psnr_graph, generate_ssim_graph)
@@ -13,6 +14,21 @@ from ffprobe import (is_valid_video, get_video_dimensions, get_video_duration, g
 MAX_FILE_SIZE = 250 * 1024 * 1024  # File limit: 250 MB in bytes
 FRONTEND_URL = "https://sherboa.com"
 
+
+analysis_lock = threading.Lock()
+
+
+def limit_analysis_concurrency():
+    if not analysis_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="An analysis is already in progress. Please try again later."
+        )
+
+    try:
+        yield
+    finally:
+        analysis_lock.release()
 
 
 app = FastAPI()  # Initialize the FastAPI application
@@ -34,13 +50,15 @@ def home():  # Define the root endpoint function
 @app.post("/vmaf")  # Define a POST endpoint for computing VMAF
 
 
-def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = File(...), format: str = "json") -> dict:  # Define the endpoint function to compute VMAF
+def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = File(...), format: str = "json", _: None = Depends(limit_analysis_concurrency)) -> dict:  # Define the endpoint function to compute VMAF
     """
     This endpoint computes the VMAF score between a reference video and a distorted video uploaded by the user.
     It uses the vmaf_compare function to perform the computation.
     Parameters:
     - reference: The reference video file uploaded by the user.
     - distorted: The distorted video file uploaded by the user.
+    - format: The requested output format (json, csv, xml, png, psnr_png, or ssim_png). Defaults to "json".
+    - _:  A dependency that limits concurrent video analyses to one at a time, returning HTTP 429 if another analysis is already in progress.
     Returns:
     - A dictionary containing the computed VMAF score.
     """
@@ -96,35 +114,44 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
             #dist_file.write(distorted.file.read())  # Write the contents of the uploaded distorted video file to a temporary file
             dist_file.flush()  # Flush the temporary file to ensure all data is written before proceeding
 
+            ###########################################################################################
+            # FFPROBE TIMEOUTS HANDLING ###############################################################
+            try:
+                if not is_valid_video(ref_file.name) or not is_valid_video(dist_file.name):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid video file"
+                    )
 
-            if not is_valid_video(ref_file.name) or not is_valid_video(dist_file.name):
+                reference_width, reference_height = get_video_dimensions(ref_file.name)
+                distorted_width, distorted_height = get_video_dimensions(dist_file.name)
+
+                if (reference_width, reference_height) != (distorted_width, distorted_height):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Video dimensions must match"
+                    )
+
+                reference_duration = get_video_duration(ref_file.name)
+                distorted_duration = get_video_duration(dist_file.name)
+
+                if not are_durations_compatible(reference_duration, distorted_duration):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Video durations are not compatible"
+                    )
+
+                video_metadata = get_video_metadata(ref_file.name)
+
+            except TimeoutExpired:
                 raise HTTPException(
-                    status_code=400,
-                    detail="Invalid video file"
+                    status_code=504,
+                    detail="Video inspection timed out"
                 )
+            ###########################################################################################
 
-
-            reference_width, reference_height = get_video_dimensions(ref_file.name)
-            distorted_width, distorted_height = get_video_dimensions(dist_file.name)
-
-            if (reference_width, reference_height) != (distorted_width, distorted_height):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Video dimensions must match"
-                )
-
-
-            reference_duration = get_video_duration(ref_file.name)
-            distorted_duration = get_video_duration(dist_file.name)
-
-            if not are_durations_compatible(reference_duration, distorted_duration):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Video durations are not compatible"
-                )
-
-            video_metadata = get_video_metadata(ref_file.name)
-
+            ###########################################################################################
+            # FUNCTION [video_compare()] TIMEOUTS HANDLING ############################################
             try:
                 result = video_compare(ref_file.name, dist_file.name)
             except CalledProcessError:  # Error handling #4: catch CalledProcessError raised by subprocess.run() in vmaf_compare() if FFmpeg fails to execute properly
@@ -137,9 +164,11 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
                     status_code=504,
                     detail=str(e)
                 )
+            ###########################################################################################
 
 
-
+    ###################################################################################################
+    # MAKING OF CSV FILE ##############################################################################
     if format == "csv":  # Generate a CSV file containing per-frame VMAF and PSNR values
         csv_data = generate_csv(result)  # Generate a CSV string containing per-frame VMAF and PSNR values using the generate_csv() function
 
@@ -150,7 +179,11 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
                 "Content-Disposition": "attachment; filename=results.csv"
             }
         )
+    ###################################################################################################
 
+
+    ###################################################################################################
+    # MAKING OF XML FILE ##############################################################################
     if format == "xml":  # Generate an XML file containing the complete analysis results
         xml_data = generate_xml(result)  # Generate an XML string containing the complete analysis results using the generate_xml() function
 
@@ -161,7 +194,11 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
                 "Content-Disposition": "attachment; filename=results.xml"  # Set the Content-Disposition header to specify the filename for the downloaded XML file
             }
         )
+    ##################################################################################################
 
+
+    ##################################################################################################
+    # DELIVERY OF VMAF GRAPH IN PNG FORMAT ###########################################################
     if format == "png":  # Generate a PNG graph containing per-frame VMAF values
         png_data = generate_vmaf_graph(result)
 
@@ -172,7 +209,11 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
                 "Content-Disposition": "attachment; filename=vmaf-graph.png"  # Set the Content-Disposition header to specify the filename for the downloaded PNG graph
             }
         )
+    ##################################################################################################
 
+
+    ##################################################################################################
+    # DELIVERY OF PSNR GRAPH IN PNG FORMAT ###########################################################
     if format == "psnr_png":  # Generate a PNG graph containing per-frame PSNR values
         png_data = generate_psnr_graph(result)
 
@@ -183,7 +224,11 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
                 "Content-Disposition": "attachment; filename=psnr-graph.png"  # Set the Content-Disposition header to specify the filename for the downloaded PNG graph
             }
         )
+    #################################################################################################
 
+
+    ##################################################################################################
+    # DELIVERY OF SSIM GRAPH IN PNG FORMAT ###########################################################
     if format == "ssim_png":  # Generate a PNG graph containing per-frame SSIM values
         png_data = generate_ssim_graph(result)
 
@@ -194,7 +239,7 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
                 "Content-Disposition": "attachment; filename=ssim-graph.png"  # Set the Content-Disposition header to specify the filename for the downloaded PNG graph
             }
         )
-
+    #################################################################################################
 
     return {
         **result,  # Merge the computed VMAF, PSNR, and SSIM results with the video metadata into a single dictionary to be returned as the API response
