@@ -49,6 +49,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar del directorio actual del proyecto al directorio actual dentro del contenedor
 COPY . .
 
+# Para mayor seguridad ejecutar sherboa-engine como usuario no-root
+RUN useradd --system --uid 10001 --create-home sherboa-user \
+    && chown -R sherboa-user:sherboa-user /app
+
+USER sherboa-user
+
 # Comando que se ejecutará cuando se inicie el contenedor:
 # uvicorn main:app --host 0.0.0.0 --port 8000 [El servidor acepta conexiones desde cualquier interfaz de red]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

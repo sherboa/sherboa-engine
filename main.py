@@ -22,7 +22,7 @@ def limit_analysis_concurrency():
     if not analysis_lock.acquire(blocking=False):
         raise HTTPException(
             status_code=429,
-            detail="An analysis is already in progress. Please try again later."
+            detail="an analysis is already in progress, please try again later."
         )
 
     try:
