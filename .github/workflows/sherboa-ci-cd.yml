@@ -64,18 +64,26 @@ jobs:
             '{
               commands: [
                 "set -e",
+                "echo STEP: Authenticate with ECR",
                 "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin \($image_uri)",
+                "echo STEP: Pull image \($image_tag)",
                 "docker pull \($image_uri):\($image_tag)",
+                "echo STEP: Ensure Docker network",
                 "docker network inspect sherboa-network >/dev/null 2>&1 || docker network create sherboa-network",
+                "echo STEP: Prepare persistent data directory",
                 "mkdir -p /srv/sherboa-data",
                 "chown 10001:10001 /srv/sherboa-data",
                 "chmod 750 /srv/sherboa-data",
+                "echo STEP: Remove previous container",
                 "docker rm -f sherboa-engine 2>/dev/null || true",
+                "echo STEP: Start new container",
                 "docker run -d --name sherboa-engine --restart unless-stopped --network sherboa-network -v /srv/sherboa-data:/data \($image_uri):\($image_tag)",
-                "for attempt in 1 2 3 4 5 6 7 8 9 10; do docker exec sherboa-engine python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=2)\" >/dev/null 2>&1 && break; sleep 2; done",
+                "echo STEP: Check API health",
+                "for attempt in 1 2 3 4 5 6 7 8 9 10; do echo \"Health check attempt $attempt/10\"; if docker exec sherboa-engine python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=2)\" >/dev/null 2>&1; then echo API_health_check_passed; break; fi; sleep 2; done",
                 "docker exec sherboa-engine python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=2)\" >/dev/null 2>&1 || { echo API_health_check_failed; docker logs --tail 80 sherboa-engine; exit 1; }",
-                "echo API_health_check_passed",
-                "docker image prune -af"
+                "echo STEP: Prune unused Docker images",
+                "docker image prune -af",
+                "echo STEP: Deployment commands completed"
               ]
             }')
 
