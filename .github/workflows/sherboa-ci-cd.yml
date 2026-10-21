@@ -72,9 +72,9 @@ jobs:
                 "chmod 750 /srv/sherboa-data",
                 "docker rm -f sherboa-engine 2>/dev/null || true",
                 "docker run -d --name sherboa-engine --restart unless-stopped --network sherboa-network -v /srv/sherboa-data:/data \($image_uri):\($image_tag)",
-                "for attempt in 1 2 3 4 5 6 7 8 9 10; do docker exec sherboa-engine python -c '\''import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/\", timeout=2)'\'' >/dev/null 2>&1 && break; sleep 2; done",
-                "docker exec sherboa-engine python -c '\''import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/\", timeout=2)'\'' >/dev/null 2>&1 || { echo \"API health check failed.\"; docker logs --tail 80 sherboa-engine; exit 1; }",
-                "echo 'API health check passed.'",
+                "for attempt in 1 2 3 4 5 6 7 8 9 10; do docker exec sherboa-engine python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=2)\" >/dev/null 2>&1 && break; sleep 2; done",
+                "docker exec sherboa-engine python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=2)\" >/dev/null 2>&1 || { echo API_health_check_failed; docker logs --tail 80 sherboa-engine; exit 1; }",
+                "echo API_health_check_passed",
                 "docker image prune -af"
               ]
             }')
