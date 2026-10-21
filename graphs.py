@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 
 
 
-
 # FUNCTION TO GENERATE A VMAF GRAPH
 def generate_vmaf_graph(result: dict) -> bytes:
     """

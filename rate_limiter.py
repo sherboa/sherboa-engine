@@ -103,7 +103,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
                     return JSONResponse(
                         status_code=429,
-                        content={"detail": "Rate limit capacity reached. Please try again later."},
+                        content={"detail": "rate limit capacity reached, please try again later."},
                         headers={"Retry-After": str(RATE_LIMIT_WINDOW_SECONDS)},
                     )
 
@@ -125,7 +125,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
                 return JSONResponse(
                     status_code=429,
-                    content={"detail": "Too many requests. Please try again later."},
+                    content={"detail": "too many requests, please try again later."},
                     headers={"Retry-After": str(retry_after)},
                 )
 
@@ -157,7 +157,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     return JSONResponse(
                         status_code=429,
                         content={
-                            "detail": "Analysis rate limit reached. Please try again later."
+                            "detail": "analysis rate limit reached, please try again later."
                         },
                         headers={"Retry-After": str(retry_after)},
                     )

@@ -1,15 +1,16 @@
 # This is the main FastAPI application file for the VMAF, PSNR, and SSIM API. It defines the endpoints and handles video file uploads, validation, and quality metric computation.
 
 from subprocess import CalledProcessError, TimeoutExpired
-from rate_limiter import RateLimitMiddleware, limit_analysis_concurrency
 import tempfile
 import shutil
-from fastapi import FastAPI, UploadFile, File, HTTPException, Response, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException, Response, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from quality_metrics import (video_compare)
 from graphs import (generate_vmaf_graph, generate_psnr_graph, generate_ssim_graph)
 from exports import (generate_csv, generate_xml)
 from ffprobe import (is_valid_video, get_video_dimensions, get_video_duration, get_video_metadata, are_durations_compatible)
+from rate_limiter import RateLimitMiddleware, limit_analysis_concurrency
+from usage_limiter import UsageLimiter, UsageLimitExceeded, USAGE_LIMIT_MAX_ANALYSES
 
 ########################################################################################################################
 # CONSTANTS
@@ -23,6 +24,7 @@ FRONTEND_URL = "https://sherboa.com"  # Authorized frontend origin for cross-ori
 ########################################################################################################################
 app = FastAPI()
 app.add_middleware(RateLimitMiddleware)
+usage_limiter = UsageLimiter()  # Persistent rolling-window quota shared across container recreations
 
 ########################################################################################################################
 # CORS CONFIGURATION
@@ -46,10 +48,9 @@ def home():  # Define the root endpoint function
 ########################################################################################################################
 # VIDEO QUALITY ANALYSIS ENDPOINT
 ########################################################################################################################
-
 @app.post("/vmaf")  # Define a POST endpoint for computing VMAF
 
-def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = File(...), format: str = "json", _: None = Depends(limit_analysis_concurrency)) -> dict:  # Define the endpoint function to compute VMAF
+def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorted: UploadFile = File(...), format: str = "json", _: None = Depends(limit_analysis_concurrency)) -> dict:  # Define the endpoint function to compute VMAF
     """
     Compare a reference video against a distorted video.
 
@@ -131,7 +132,6 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
             ############################################################################################################
             # VIDEO INSPECTION AND VALIDATION
             ############################################################################################################
-            
             try:
                 if not is_valid_video(ref_file.name) or not is_valid_video(dist_file.name):
                     raise HTTPException(
@@ -168,7 +168,29 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
             ###########################################################################################
             # QUALITY METRIC COMPUTATION
             ###########################################################################################
+            if not request.client or not request.client.host:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Unable to identify client IP"
+                )
+
+            client_ip = request.client.host
+
+
             try:
+                usage_limiter.register_analysis(client_ip)
+            except UsageLimitExceeded as e:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"Analysis limit reached: maximum "
+                        f"{USAGE_LIMIT_MAX_ANALYSES} analyses per IP "
+                        f"in a rolling 24-hour window. Please try again later."
+                    ),
+                    headers={"Retry-After": str(e.retry_after)}
+                )
+
+            try:  # From this point onward, the analysis counts even if processing fails
                 result = video_compare(ref_file.name, dist_file.name)
             except CalledProcessError:  # Error handling #4: catch CalledProcessError raised by subprocess.run() in vmaf_compare() if FFmpeg fails to execute properly
                 raise HTTPException(
@@ -180,7 +202,6 @@ def calculate_vmaf(reference: UploadFile = File(...), distorted: UploadFile = Fi
                     status_code=504,
                     detail=str(e)
                 )
-
 
     ###################################################################################################
     # CSV FILE: return tabular per-frame metric data as a downloadable file

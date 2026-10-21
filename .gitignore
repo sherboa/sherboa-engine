@@ -2,3 +2,7 @@
 __pycache__/
 vmaf.json
 sherboa-engine.tar
+# SQLite usage database
+*.db
+*.db-shm
+*.db-wal
