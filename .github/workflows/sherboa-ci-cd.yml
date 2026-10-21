@@ -58,11 +58,32 @@ jobs:
           echo "Using AWS CLI version: $(aws --version)"   # Log the AWS CLI version being used for the deployment for reference
           IMAGE_TAG=${{ github.sha }}   # Define the image tag based on the current Git commit SHA for deployment
 
+          COMMANDS=$(jq -n \
+            --arg image_uri "$IMAGE_URI" \
+            --arg image_tag "$IMAGE_TAG" \
+            '{
+              commands: [
+                "set -e",
+                "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin \($image_uri)",
+                "docker pull \($image_uri):\($image_tag)",
+                "docker network inspect sherboa-network >/dev/null 2>&1 || docker network create sherboa-network",
+                "mkdir -p /srv/sherboa-data",
+                "chown 10001:10001 /srv/sherboa-data",
+                "chmod 750 /srv/sherboa-data",
+                "docker rm -f sherboa-engine 2>/dev/null || true",
+                "docker run -d --name sherboa-engine --restart unless-stopped --network sherboa-network -v /srv/sherboa-data:/data \($image_uri):\($image_tag)",
+                "for attempt in 1 2 3 4 5 6 7 8 9 10; do docker exec sherboa-engine python -c '\''import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/\", timeout=2)'\'' >/dev/null 2>&1 && break; sleep 2; done",
+                "docker exec sherboa-engine python -c '\''import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/\", timeout=2)'\'' >/dev/null 2>&1 || { echo \"API health check failed.\"; docker logs --tail 80 sherboa-engine; exit 1; }",
+                "echo 'API health check passed.'",
+                "docker image prune -af"
+              ]
+            }')
+
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids i-082236ea5c1088e9f \
             --document-name AWS-RunShellScript \
             --comment "Deploy Sherboa ${IMAGE_TAG}" \
-            --parameters "{\"commands\":[\"set -e\",\"aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${IMAGE_URI}\",\"docker pull ${IMAGE_URI}:${IMAGE_TAG}\",\"docker network inspect sherboa-network >/dev/null 2>&1 || docker network create sherboa-network\",\"docker rm -f sherboa-engine 2>/dev/null || true\",\"docker run -d --name sherboa-engine --restart unless-stopped --network sherboa-network ${IMAGE_URI}:${IMAGE_TAG}\",\"for i in {1..10}; do curl -f http://localhost:8000/ && break; sleep 2; done\",\"docker image prune -af\"]}" \
+            --parameters "$COMMANDS" \
             --query 'Command.CommandId' \
             --output text)   # Output the Command ID of the sent command for reference and tracking its execution status
 
