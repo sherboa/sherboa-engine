@@ -193,7 +193,7 @@ def video_compare(reference, distorted) -> dict:
 
         return {
             "sherboa-engine": {
-                "version": "1.4.0"
+                "version": "1.5.0"
             },
             "vmaf": vmaf,  # Create a dictionary to hold the VMAF results, including mean, min, max, and per-frame values
             "psnr": psnr,  # Create a dictionary to hold the PSNR results, including mean, min, max, and per-frame values

@@ -3,14 +3,18 @@
 from subprocess import CalledProcessError, TimeoutExpired
 import tempfile
 import shutil
+import re
+from uuid import UUID
 from fastapi import FastAPI, UploadFile, File, HTTPException, Response, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from quality_metrics import (video_compare)
 from graphs import (generate_vmaf_graph, generate_psnr_graph, generate_ssim_graph)
 from exports import (generate_csv, generate_xml)
 from ffprobe import (is_valid_video, get_video_dimensions, get_video_duration, get_video_metadata, are_durations_compatible)
 from rate_limiter import RateLimitMiddleware, limit_analysis_concurrency
 from usage_limiter import UsageLimiter, UsageLimitExceeded, USAGE_LIMIT_MAX_ANALYSES
+import thumbnails
 
 ########################################################################################################################
 # CONSTANTS
@@ -43,6 +47,71 @@ app.add_middleware(  # Allow browser requests only from the official sherboa fro
 @app.get("/")  # Define a GET endpoint for the root URL
 def home():  # Define the root endpoint function
     return {"message": "VMAF API is running"}  # Return a JSON response indicating that the API is running
+
+########################################################################################################################
+# THUMBNAIL ENDPOINT
+########################################################################################################################
+@app.get(
+    "/thumbnails/{analysis_id}/{video_type}/{filename}",
+    include_in_schema=False,
+)
+def get_thumbnail(analysis_id: str, video_type: str, filename: str,):
+    """
+    Serve a generated thumbnail without exposing arbitrary filesystem paths.
+    """
+
+    not_found = HTTPException(
+        status_code=404,
+        detail="Thumbnail not found",
+    )
+
+    try:  # Accept only canonical UUIDs as analysis identifiers
+        canonical_id = str(UUID(analysis_id))
+    except (ValueError, AttributeError):
+        raise not_found
+
+    if canonical_id != analysis_id.lower():
+        raise not_found
+
+    if video_type not in {"reference", "distorted"}:  # Restrict access to the two expected video directories
+        raise not_found
+
+    if not re.fullmatch(r"thumbnail_\d{4,}\.jpg", filename):  # Only serve generated JPEG thumbnails
+        raise not_found
+
+    thumbnails.cleanup_expired_thumbnails(root=thumbnails.THUMBNAIL_ROOT,)  # Remove expired analyses before attempting to serve a file
+
+    root = thumbnails.THUMBNAIL_ROOT.resolve()
+    analysis_dir = (root / canonical_id).resolve()
+
+    if analysis_dir.parent != root:  # Ensure the analysis directory is directly inside the thumbnail root
+        raise not_found
+
+    if (analysis_dir / ".generating").exists():  # Never serve files while an analysis is still generating thumbnails
+        raise not_found
+
+    video_dir = (analysis_dir / video_type).resolve()
+
+    try:
+        video_dir.relative_to(analysis_dir)
+    except ValueError:
+        raise not_found
+
+    image_path = (video_dir / filename).resolve()
+
+    try:  # Prevent symlinks or path manipulation from escaping the video directory
+        image_path.relative_to(video_dir)
+    except ValueError:
+        raise not_found
+
+    if not image_path.is_file():
+        raise not_found
+
+    return FileResponse(
+        path=image_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 ########################################################################################################################
@@ -79,7 +148,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
     if format not in {"json", "csv", "xml", "png", "psnr_png", "ssim_png"}:  # Error handling #6: check if the requested output format is valid
         raise HTTPException(
             status_code=400,
-            detail="Invalid format. Supported formats: json, csv, xml, png, psnr_png, ssim_png"
+            detail="invalid format. Supported formats: json, csv, xml, png, psnr_png, ssim_png"
         )
 
     print(">>> FUNCTION 'calculate_vmaf' EXECUTED <<<", flush=True)  # Print a message indicating that the VMAF calculation has started
@@ -88,7 +157,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
     if not reference.filename or not distorted.filename:  # Error handling #1: check if both video files are provided
         raise HTTPException(
             status_code=400,
-            detail="Invalid input: both video files must be provided"
+            detail="invalid input: both video files must be provided"
         )
 
     # Determine the size of each upload without loading the whole file into memory
@@ -103,7 +172,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
     if reference_size > MAX_FILE_SIZE or distorted_size > MAX_FILE_SIZE:  # Error handling #3: check if either video file exceeds the maximum allowed size
         raise HTTPException(
             status_code=413,
-            detail=f"File size exceeds the limit of {MAX_FILE_SIZE / (1024 * 1024)} MB"
+            detail=f"file size exceeds the limit of {MAX_FILE_SIZE / (1024 * 1024)} MB"
         )
 
 
@@ -117,9 +186,12 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
     if reference_size == 0 or distorted_size == 0:  # Error handling #2: check if both video files contain data
         raise HTTPException(
             status_code=400,
-            detail="Both video files must contain data"
+            detail="both video files must contain data"
         )
-  
+
+    analysis_id = None
+    thumbnails_available = False
+
 
     with tempfile.NamedTemporaryFile(suffix=".mp4") as ref_file:
         shutil.copyfileobj(reference.file, ref_file)
@@ -136,7 +208,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
                 if not is_valid_video(ref_file.name) or not is_valid_video(dist_file.name):
                     raise HTTPException(
                         status_code=400,
-                        detail="Invalid video file"
+                        detail="invalid video file"
                     )
 
                 reference_width, reference_height = get_video_dimensions(ref_file.name)
@@ -145,7 +217,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
                 if (reference_width, reference_height) != (distorted_width, distorted_height):
                     raise HTTPException(
                         status_code=400,
-                        detail="Video dimensions must match"
+                        detail="video dimensions must match"
                     )
 
                 reference_duration = get_video_duration(ref_file.name)
@@ -154,7 +226,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
                 if not are_durations_compatible(reference_duration, distorted_duration):
                     raise HTTPException(
                         status_code=400,
-                        detail="Video durations are not compatible"
+                        detail="video durations are not compatible"
                     )
 
                 video_metadata = get_video_metadata(ref_file.name)
@@ -162,7 +234,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
             except TimeoutExpired:  # ffprobe did not finish within its configured timeout
                 raise HTTPException(
                     status_code=504,
-                    detail="Video inspection timed out"
+                    detail="video inspection timed out"
                 )
 
             ###########################################################################################
@@ -171,7 +243,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
             if not request.client or not request.client.host:
                 raise HTTPException(
                     status_code=500,
-                    detail="Unable to identify client IP"
+                    detail="unable to identify client IP"
                 )
 
             client_ip = request.client.host
@@ -183,9 +255,9 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
                 raise HTTPException(
                     status_code=429,
                     detail=(
-                        f"Analysis limit reached: maximum "
+                        f"analysis limit reached: maximum "
                         f"{USAGE_LIMIT_MAX_ANALYSES} analyses per IP "
-                        f"in a rolling 24-hour window. Please try again later."
+                        f"in a rolling 24-hour window; please try again later."
                     ),
                     headers={"Retry-After": str(e.retry_after)}
                 )
@@ -195,13 +267,49 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
             except CalledProcessError:  # Error handling #4: catch CalledProcessError raised by subprocess.run() in vmaf_compare() if FFmpeg fails to execute properly
                 raise HTTPException(
                     status_code=400,
-                    detail="Invalid video file"
+                    detail="invalid video file"
                 )
             except RuntimeError as e:  # Error handling #5: catch RuntimeError raised by vmaf_compare() if VMAF computation exceeds the timeout limit
                 raise HTTPException(
                     status_code=504,
                     detail=str(e)
                 )
+
+            # Generate thumbnails only for JSON analysis requests; thumbnail failures must never invalidate successful quality metrics.
+            if format == "json":
+                analysis_dir = None
+
+                try:
+                    analysis_dir = thumbnails.create_analysis_thumbnail_dir()
+                    analysis_id = analysis_dir.name
+                    analysis_dir.mkdir(parents=False, exist_ok=False)
+
+                    generating_marker = analysis_dir / ".generating"
+                    generating_marker.touch()
+
+                    thumbnails.generate_thumbnails(
+                        ref_file.name,
+                        analysis_dir / "reference",
+                    )
+
+                    thumbnails.generate_thumbnails(
+                        dist_file.name,
+                        analysis_dir / "distorted",
+                    )
+
+                    generating_marker.unlink()
+                    thumbnails_available = True
+
+                except Exception as e:
+                    if analysis_dir is not None:
+                        shutil.rmtree(analysis_dir, ignore_errors=True)
+
+                    analysis_id = None
+                    thumbnails_available = False
+                    print(
+                        f"Thumbnail generation failed: {e}",
+                        flush=True,
+                    )
 
     ###################################################################################################
     # CSV FILE: return tabular per-frame metric data as a downloadable file
@@ -279,5 +387,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
 
     return {
         **result,  # Merge the computed VMAF, PSNR, and SSIM results with the video metadata into a single dictionary to be returned as the API response
-        "video": video_metadata  # Include the video metadata in the response under the "video" key
+        "video": video_metadata,  # Include the video metadata in the response under the "video" key
+        "analysis_id": analysis_id,
+        "thumbnails_available": thumbnails_available,
     }
