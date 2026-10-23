@@ -248,6 +248,8 @@ def test_valid_analysis_generates_thumbnails_and_returns_analysis_id(client, mon
     assert data["vmaf"] == {"mean": 95.0}
     assert data["psnr"] == {"mean": 40.0}
     assert data["ssim"] == {"mean": 0.98}
+    assert data["video"] == {"duration": 10.0}
+    assert data["distorted_video"] == {"duration": 10.0}
     assert data["thumbnails_available"] is True
     assert isinstance(data["analysis_id"], str)
     assert data["analysis_id"]

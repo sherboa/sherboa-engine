@@ -230,6 +230,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
                     )
 
                 video_metadata = get_video_metadata(ref_file.name)
+                distorted_video_metadata = get_video_metadata(dist_file.name)
 
             except TimeoutExpired:  # ffprobe did not finish within its configured timeout
                 raise HTTPException(
@@ -388,6 +389,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
     return {
         **result,  # Merge the computed VMAF, PSNR, and SSIM results with the video metadata into a single dictionary to be returned as the API response
         "video": video_metadata,  # Include the video metadata in the response under the "video" key
+        "distorted_video": distorted_video_metadata,
         "analysis_id": analysis_id,
         "thumbnails_available": thumbnails_available,
     }
