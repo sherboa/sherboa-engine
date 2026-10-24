@@ -114,6 +114,137 @@ def get_thumbnail(analysis_id: str, video_type: str, filename: str,):
     )
 
 
+
+########################################################################################################################
+# VIDEO PREPARATION ENDPOINT
+########################################################################################################################
+@app.post("/prepare")
+def prepare_videos(reference: UploadFile = File(...), distorted: UploadFile = File(...),) -> dict:
+    """
+    Validate both videos and generate thumbnails without running quality metrics or consuming the daily analysis quota.
+    """
+
+    if not reference.filename or not distorted.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="invalid input: both video files must be provided",
+        )
+
+    reference.file.seek(0, 2)
+    reference_size = reference.file.tell()
+
+    distorted.file.seek(0, 2)
+    distorted_size = distorted.file.tell()
+
+    if reference_size > MAX_FILE_SIZE or distorted_size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"file size exceeds the limit of {MAX_FILE_SIZE / (1024 * 1024)} MB",
+        )
+
+    if reference_size == 0 or distorted_size == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="both video files must contain data",
+        )
+
+    reference.file.seek(0)
+    distorted.file.seek(0)
+
+    analysis_dir = None
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as ref_file:
+            shutil.copyfileobj(reference.file, ref_file)
+            ref_file.flush()
+
+            with tempfile.NamedTemporaryFile(suffix=".mp4") as dist_file:
+                shutil.copyfileobj(distorted.file, dist_file)
+                dist_file.flush()
+
+                try:
+                    if not is_valid_video(ref_file.name) or not is_valid_video(dist_file.name):
+                        raise HTTPException(
+                            status_code=400,
+                            detail="invalid video file",
+                        )
+
+                    reference_width, reference_height = get_video_dimensions(ref_file.name)
+                    distorted_width, distorted_height = get_video_dimensions(dist_file.name)
+
+                    if (reference_width, reference_height) != (
+                        distorted_width,
+                        distorted_height,
+                    ):
+                        raise HTTPException(
+                            status_code=400,
+                            detail="video dimensions must match",
+                        )
+
+                    reference_duration = get_video_duration(ref_file.name)
+                    distorted_duration = get_video_duration(dist_file.name)
+
+                    if not are_durations_compatible(
+                        reference_duration,
+                        distorted_duration,
+                    ):
+                        raise HTTPException(
+                            status_code=400,
+                            detail="video durations are not compatible",
+                        )
+
+                    video_metadata = get_video_metadata(ref_file.name)
+                    distorted_video_metadata = get_video_metadata(dist_file.name)
+
+                except TimeoutExpired:
+                    raise HTTPException(
+                        status_code=504,
+                        detail="video inspection timed out",
+                    )
+
+                analysis_dir = thumbnails.create_analysis_thumbnail_dir()
+                analysis_dir.mkdir(parents=False, exist_ok=False)
+
+                generating_marker = analysis_dir / ".generating"
+                generating_marker.touch()
+
+                thumbnails.generate_thumbnails(
+                    ref_file.name,
+                    analysis_dir / "reference",
+                )
+
+                thumbnails.generate_thumbnails(
+                    dist_file.name,
+                    analysis_dir / "distorted",
+                )
+
+                generating_marker.unlink()
+
+                return {
+                    "video": video_metadata,
+                    "distorted_video": distorted_video_metadata,
+                    "analysis_id": analysis_dir.name,
+                    "thumbnails_available": True,
+                }
+
+    except HTTPException:
+        if analysis_dir is not None:
+            shutil.rmtree(analysis_dir, ignore_errors=True)
+        raise
+
+    except Exception as e:
+        if analysis_dir is not None:
+            shutil.rmtree(analysis_dir, ignore_errors=True)
+
+        print(f"Video preparation failed: {e}", flush=True)
+
+        raise HTTPException(
+            status_code=500,
+            detail="video preparation failed",
+        )
+
+
+
 ########################################################################################################################
 # VIDEO QUALITY ANALYSIS ENDPOINT
 ########################################################################################################################
@@ -276,41 +407,6 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
                     detail=str(e)
                 )
 
-            # Generate thumbnails only for JSON analysis requests; thumbnail failures must never invalidate successful quality metrics.
-            if format == "json":
-                analysis_dir = None
-
-                try:
-                    analysis_dir = thumbnails.create_analysis_thumbnail_dir()
-                    analysis_id = analysis_dir.name
-                    analysis_dir.mkdir(parents=False, exist_ok=False)
-
-                    generating_marker = analysis_dir / ".generating"
-                    generating_marker.touch()
-
-                    thumbnails.generate_thumbnails(
-                        ref_file.name,
-                        analysis_dir / "reference",
-                    )
-
-                    thumbnails.generate_thumbnails(
-                        dist_file.name,
-                        analysis_dir / "distorted",
-                    )
-
-                    generating_marker.unlink()
-                    thumbnails_available = True
-
-                except Exception as e:
-                    if analysis_dir is not None:
-                        shutil.rmtree(analysis_dir, ignore_errors=True)
-
-                    analysis_id = None
-                    thumbnails_available = False
-                    print(
-                        f"Thumbnail generation failed: {e}",
-                        flush=True,
-                    )
 
     ###################################################################################################
     # CSV FILE: return tabular per-frame metric data as a downloadable file
