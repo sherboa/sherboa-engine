@@ -83,7 +83,7 @@ def video_compare(reference, distorted, offset: float = 0.0) -> dict:
                 f"setpts=PTS-STARTPTS[dist];"
                 f"[1:v]trim=start={reference_start}:duration={overlap_duration},"
                 f"setpts=PTS-STARTPTS[ref];"
-                f"[dist]split=3[dist_vmaf][dist_psnr][dist_ssim]"  # Use the libvmaf filter to compute VMAF scores between the distorted and reference videos
+                f"[dist]split=3[dist_vmaf][dist_psnr][dist_ssim];"  # Use the libvmaf filter to compute VMAF scores between the distorted and reference videos
                 f"[ref]split=3[ref_vmaf][ref_psnr][ref_ssim];"
                 f"[dist_vmaf][ref_vmaf]libvmaf="
                 f"model=version=vmaf_v1.0.16_3d0h:"  # Specify the VMAF model version to be used for computation
