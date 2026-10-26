@@ -95,6 +95,46 @@ def get_video_duration(file_path: str) -> float:
 
 
 
+# FUNCTION TO CALCULATE VIDEO START TIMES AND OVERLAP DURATION
+def get_overlap_interval(reference_duration: float, distorted_duration: float, offset: float = 0.0,) -> tuple[float, float, float]:
+    """
+    Calculate the common temporal interval for synchronized video comparison.
+    The offset convention is: distorted_time = reference_time + offset.
+    Returns:
+        A tuple containing the reference start time, distorted start time,
+        and common interval duration, in seconds.
+    Raises:
+        ValueError: If the offset is non-finite or no overlap exists.
+    """
+    import math
+
+    if not math.isfinite(offset):
+        raise ValueError("offset must be a finite number")
+
+    if (
+        not math.isfinite(reference_duration)
+        or not math.isfinite(distorted_duration)
+        or reference_duration <= 0
+        or distorted_duration <= 0
+    ):
+        raise ValueError("video durations must be finite and greater than zero")
+
+
+    reference_start = max(0.0, -offset)
+    distorted_start = max(0.0, offset)
+
+    overlap_end = min(
+        reference_duration - reference_start,
+        distorted_duration - distorted_start,
+    )
+
+    if overlap_end <= 0:
+        raise ValueError("offset leaves no overlapping video interval")
+
+    return reference_start, distorted_start, overlap_end
+
+
+
 # FUNCTION TO CALCULATE THE DIFFERENCE IN SECONDS BETWEEN THE TWO INPUT STREAMS
 def are_durations_compatible(reference_duration: float, distorted_duration: float) -> bool:
     """

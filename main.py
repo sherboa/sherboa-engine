@@ -3,15 +3,16 @@
 from subprocess import CalledProcessError, TimeoutExpired
 import tempfile
 import shutil
+import math
 import re
 from uuid import UUID
-from fastapi import FastAPI, UploadFile, File, HTTPException, Response, Depends, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Response, Depends, Request, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from quality_metrics import (video_compare)
+from quality_metrics import (video_compare, UnsupportedFrameRateError)
 from graphs import (generate_vmaf_graph, generate_psnr_graph, generate_ssim_graph)
 from exports import (generate_csv, generate_xml)
-from ffprobe import (is_valid_video, get_video_dimensions, get_video_duration, get_video_metadata, are_durations_compatible)
+from ffprobe import (is_valid_video, get_video_dimensions, get_video_duration, get_video_metadata, are_durations_compatible, get_overlap_interval)
 from rate_limiter import RateLimitMiddleware, limit_analysis_concurrency
 from usage_limiter import UsageLimiter, UsageLimitExceeded, USAGE_LIMIT_MAX_ANALYSES
 import thumbnails
@@ -184,10 +185,7 @@ def prepare_videos(reference: UploadFile = File(...), distorted: UploadFile = Fi
                     reference_duration = get_video_duration(ref_file.name)
                     distorted_duration = get_video_duration(dist_file.name)
 
-                    if not are_durations_compatible(
-                        reference_duration,
-                        distorted_duration,
-                    ):
+                    if not are_durations_compatible(reference_duration, distorted_duration,):
                         raise HTTPException(
                             status_code=400,
                             detail="video durations are not compatible",
@@ -250,7 +248,7 @@ def prepare_videos(reference: UploadFile = File(...), distorted: UploadFile = Fi
 ########################################################################################################################
 @app.post("/vmaf")  # Define a POST endpoint for computing VMAF
 
-def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorted: UploadFile = File(...), format: str = "json", _: None = Depends(limit_analysis_concurrency)) -> dict:  # Define the endpoint function to compute VMAF
+def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorted: UploadFile = File(...), format: str = "json", offset: float = Form(0.0), _: None = Depends(limit_analysis_concurrency)) -> dict:  # Define the endpoint function to compute VMAF
     """
     Compare a reference video against a distorted video.
 
@@ -268,6 +266,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
     - reference: The reference video file uploaded by the user.
     - distorted: The distorted video file uploaded by the user.
     - format: The requested output format (json, csv, xml, png, psnr_png, or ssim_png). Defaults to "json".
+    - offset: Temporal synchronization offset in seconds applied to the distorted video relative to the reference video. Defaults to 0.0 (no offset).
     - _:  A dependency that limits concurrent video analyses to one at a time, returning HTTP 429 if another analysis is already in progress.
     Returns:
     - A dictionary with quality metrics and video metadata for JSON output, or a response containing the requested downloadable file.
@@ -280,6 +279,13 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
         raise HTTPException(
             status_code=400,
             detail="invalid format. Supported formats: json, csv, xml, png, psnr_png, ssim_png"
+        )
+
+    # Validate the synchronization offset before processing uploaded videos
+    if not math.isfinite(offset):
+        raise HTTPException(
+            status_code=400,
+            detail="offset must be a finite number"
         )
 
     print(">>> FUNCTION 'calculate_vmaf' EXECUTED <<<", flush=True)  # Print a message indicating that the VMAF calculation has started
@@ -354,10 +360,16 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
                 reference_duration = get_video_duration(ref_file.name)
                 distorted_duration = get_video_duration(dist_file.name)
 
-                if not are_durations_compatible(reference_duration, distorted_duration):
+                try:
+                    get_overlap_interval(
+                        reference_duration,
+                        distorted_duration,
+                        offset,
+                    )
+                except ValueError as e:
                     raise HTTPException(
                         status_code=400,
-                        detail="video durations are not compatible"
+                        detail=str(e),
                     )
 
                 video_metadata = get_video_metadata(ref_file.name)
@@ -395,17 +407,13 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
                 )
 
             try:  # From this point onward, the analysis counts even if processing fails
-                result = video_compare(ref_file.name, dist_file.name)
-            except CalledProcessError:  # Error handling #4: catch CalledProcessError raised by subprocess.run() in vmaf_compare() if FFmpeg fails to execute properly
-                raise HTTPException(
-                    status_code=400,
-                    detail="invalid video file"
-                )
-            except RuntimeError as e:  # Error handling #5: catch RuntimeError raised by vmaf_compare() if VMAF computation exceeds the timeout limit
-                raise HTTPException(
-                    status_code=504,
-                    detail=str(e)
-                )
+                result = video_compare(ref_file.name, dist_file.name, offset=offset)
+            except CalledProcessError:
+                raise HTTPException(status_code=400, detail="invalid video file")
+            except UnsupportedFrameRateError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except RuntimeError as e:
+                raise HTTPException(status_code=504, detail=str(e))
 
 
     ###################################################################################################

@@ -4,11 +4,13 @@ import subprocess
 import json
 import re
 import os
-from ffprobe import get_video_metadata
+from ffprobe import get_video_metadata, get_overlap_interval, get_video_duration, get_video_r_fps
 
 
 FFMPEG = "ffmpeg"
 
+class UnsupportedFrameRateError(ValueError):
+    """Raised when videos have incompatible frame rates for comparison."""
 
 # FUNCTION TO CONVERT NON FINITE RESULTS OF PSNR SCORE
 def format_psnr(value: str) -> float | str:
@@ -32,12 +34,13 @@ def format_psnr(value: str) -> float | str:
 
 
 # FUNCTION TO COMPUTE VMAF, PSNR AND SSIM
-def video_compare(reference, distorted) -> dict:
+def video_compare(reference, distorted, offset: float = 0.0) -> dict:
     """
     Computes VMAF, PSNR and SSIM between reference and distorted videos using FFmpeg.
     Parameters:
     - reference: Path to the reference video file.
     - distorted: Path to the distorted video file.
+    - offset: Temporal offset in seconds applied to the distorted video relative to the reference. Defaults to 0.0.
     Returns:
     - A dictionary containing VMAF, PSNR and SSIM results.
     """
@@ -49,17 +52,44 @@ def video_compare(reference, distorted) -> dict:
     try:
         reference_metadata = get_video_metadata(reference)
 
+        reference_duration = get_video_duration(reference)
+        distorted_duration = get_video_duration(distorted)
+
+        reference_fps = get_video_r_fps(reference)
+        distorted_fps = get_video_r_fps(distorted)
+
+        if abs(reference_fps - distorted_fps) > 0.001:
+            raise UnsupportedFrameRateError(
+                "videos with different frame rates are not supported yet."
+            )
+
+        (
+            reference_start,
+            distorted_start,
+            overlap_duration,
+        ) = get_overlap_interval(
+            reference_duration,
+            distorted_duration,
+            offset,
+        )
+
         command = [
             str(FFMPEG),  # Use the FFMPEG command to invoke FFmpeg for video processing
             "-i", distorted,  # Path to the distorted video file as input
             "-i", reference,  # Path to the reference video file as input
             "-filter_complex",  # Use the filter_complex option to apply multiple filters in a single command
             (
-                f"[0:v][1:v]libvmaf="  # Use the libvmaf filter to compute VMAF scores between the distorted and reference videos
+                f"[0:v]trim=start={distorted_start}:duration={overlap_duration},"
+                f"setpts=PTS-STARTPTS[dist];"
+                f"[1:v]trim=start={reference_start}:duration={overlap_duration},"
+                f"setpts=PTS-STARTPTS[ref];"
+                f"[dist]split=3[dist_vmaf][dist_psnr][dist_ssim]"  # Use the libvmaf filter to compute VMAF scores between the distorted and reference videos
+                f"[ref]split=3[ref_vmaf][ref_psnr][ref_ssim];"
+                f"[dist_vmaf][ref_vmaf]libvmaf="
                 f"model=version=vmaf_v1.0.16_3d0h:"  # Specify the VMAF model version to be used for computation
                 f"log_fmt=json:log_path={vmaf_output}[vmaf];"  # Specify the output format for VMAF results as JSON and the path to the output file
-                f"[0:v][1:v]psnr=stats_file={psnr_output}[psnr];"  # Use the psnr filter to compute PSNR values between the distorted and reference videos and specify the path to the output log file
-                f"[0:v][1:v]ssim=stats_file={ssim_output}[ssim]"  # Use the ssim filter to compute SSIM values between the distorted and reference videos and specify the path to the output log file
+                f"[dist_psnr][ref_psnr]psnr=stats_file={psnr_output}[psnr];"  # Use the psnr filter to compute PSNR values between the distorted and reference videos and specify the path to the output log file
+                f"[dist_ssim][ref_ssim]ssim=stats_file={ssim_output}[ssim];"  # Use the ssim filter to compute SSIM values between the distorted and reference videos and specify the path to the output log file
             ),
             "-map", "[vmaf]",  # Map the output of the VMAF filter to the output stream for VMAF results
             "-map", "[psnr]",  # Map the output of the PSNR filter to the output stream for PSNR results
