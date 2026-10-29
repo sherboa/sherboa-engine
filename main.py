@@ -392,6 +392,11 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
 
             client_ip = request.client.host
             print(f"DIAGNOSTIC client_ip={client_ip}", flush=True)
+            print(
+                f"DIAGNOSTIC x_forwarded_for={request.headers.get('x-forwarded-for')} "
+                f"cf_connecting_ip={request.headers.get('cf-connecting-ip')}",
+                flush=True,
+            )
 
             try:
                 usage_limiter.register_analysis(client_ip)
