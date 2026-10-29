@@ -391,7 +391,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
                 )
 
             client_ip = request.client.host
-
+            print(f"DIAGNOSTIC client_ip={client_ip}", flush=True)
 
             try:
                 usage_limiter.register_analysis(client_ip)
@@ -408,12 +408,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
 
             try:  # From this point onward, the analysis counts even if processing fails
                 result = video_compare(ref_file.name, dist_file.name, offset=offset)
-            except CalledProcessError as e:
-                stderr = e.stderr or ""
-                print(
-                    f"FFmpeg failed with exit code {e.returncode}:\n"
-                    + "\n".join(stderr.splitlines()[-30:])
-                )
+            except CalledProcessError:
                 raise HTTPException(status_code=400, detail="invalid video file")
             except UnsupportedFrameRateError as e:
                 raise HTTPException(status_code=400, detail=str(e))
