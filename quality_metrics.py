@@ -7,7 +7,7 @@ import os
 from ffprobe import get_video_metadata, get_overlap_interval, get_video_duration, get_video_r_fps
 
 
-FFMPEG = "ffmpeg"
+FFMPEG = "ffmpeg"  # Path to the FFmpeg executable used for video processing and quality metric computation
 
 class UnsupportedFrameRateError(ValueError):
     """Raised when videos have incompatible frame rates for comparison."""

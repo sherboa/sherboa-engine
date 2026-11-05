@@ -38,7 +38,7 @@ def limit_analysis_concurrency():
     The lock is always released when the endpoint finishes or raises an exception.
     """
 
-    if not analysis_lock.acquire(blocking=False):
+    if not analysis_lock.acquire(blocking=False):  # Try to acquire the lock without blocking; if it's already held, another analysis is in progress
         raise HTTPException(
             status_code=429,
             detail="an analysis is already in progress, please try again later."
@@ -69,7 +69,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_ip = request.client.host if request.client else "unknown"
         now = time.monotonic()
 
-        global last_rate_limit_cleanup
+        global last_rate_limit_cleanup  # Declare that we are modifying the global variable to track the last cleanup time
 
         with rate_limit_lock:
             # Periodically remove inactive IPs instead of scanning on every request
@@ -79,7 +79,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     if not entries or now - entries[-1] >= RATE_LIMIT_WINDOW_SECONDS
                 ]
 
-                for ip in inactive_ips:
+                for ip in inactive_ips:  # Clean up the general request records for inactive clients
                     del request_timestamps[ip]
 
                 inactive_analysis_ips = [  # Clean up the analysis-specific records in the same periodic pass; this avoids scanning the entire analysis dictionary on every request
@@ -89,10 +89,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     or now - entries[-1] >= RATE_LIMIT_WINDOW_SECONDS
                 ]
 
-                for ip in inactive_analysis_ips:
+                for ip in inactive_analysis_ips:  # Clean up the analysis-specific request records for inactive clients
                     del analysis_timestamps[ip]
 
-                last_rate_limit_cleanup = now
+                last_rate_limit_cleanup = now  # Update the last cleanup time to the current time after performing the cleanup
 
             timestamps = request_timestamps.get(client_ip)   # Retrieve the existing request history for this client
 
@@ -107,7 +107,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                         headers={"Retry-After": str(RATE_LIMIT_WINDOW_SECONDS)},
                     )
 
-                timestamps = deque()
+                timestamps = deque()  # Create a new deque for this client to track its request timestamps
                 request_timestamps[client_ip] = timestamps
 
             # Remove requests outside the active time window
@@ -154,7 +154,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
                     from fastapi.responses import JSONResponse
 
-                    return JSONResponse(
+                    return JSONResponse(  # Return HTTP 429 with a Retry-After header indicating when the client can retry the analysis request
                         status_code=429,
                         content={
                             "detail": "analysis rate limit reached, please try again later."

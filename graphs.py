@@ -29,7 +29,7 @@ def generate_vmaf_graph(result: dict) -> bytes:
     axis.set_ylim(0, 100)
     axis.grid(True, alpha=0.3)
 
-    figure.tight_layout()
+    figure.tight_layout()  # Adjust the layout of the figure to ensure that all elements fit within the figure area without overlapping
 
     output = io.BytesIO()  # Create a BytesIO buffer to hold the PNG image data
 
@@ -64,7 +64,7 @@ def generate_psnr_graph(result: dict) -> bytes:
     axis.set_ylabel("PSNR [dB]")
     axis.grid(True, alpha=0.3)
 
-    figure.tight_layout()
+    figure.tight_layout()  # Adjust the layout of the figure to ensure that all elements fit within the figure area without overlapping
 
     output = io.BytesIO()  # Create a BytesIO buffer to hold the PNG image data
 
@@ -100,7 +100,7 @@ def generate_ssim_graph(result: dict) -> bytes:
     axis.set_ylim(0, 1)
     axis.grid(True, alpha=0.3)
 
-    figure.tight_layout()
+    figure.tight_layout()  # Adjust the layout of the figure to ensure that all elements fit within the figure area without overlapping
 
     output = io.BytesIO()  # Create a BytesIO buffer to hold the PNG image data
 

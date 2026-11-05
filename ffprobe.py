@@ -108,7 +108,7 @@ def get_overlap_interval(reference_duration: float, distorted_duration: float, o
     """
     import math
 
-    if not math.isfinite(offset):
+    if not math.isfinite(offset):  # Check if the offset is a finite number
         raise ValueError("offset must be a finite number")
 
     if (
@@ -123,7 +123,7 @@ def get_overlap_interval(reference_duration: float, distorted_duration: float, o
     reference_start = max(0.0, -offset)
     distorted_start = max(0.0, offset)
 
-    overlap_end = min(
+    overlap_end = min(  # Calculate the end of the overlapping interval by taking the minimum of the end times of both videos, considering the offset
         reference_duration - reference_start,
         distorted_duration - distorted_start,
     )

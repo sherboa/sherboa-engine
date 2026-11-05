@@ -23,7 +23,7 @@ class UsageLimitExceeded(Exception):
     Raised when an IP has exhausted its rolling analysis quota.
     """
 
-    def __init__(self, retry_after: int):
+    def __init__(self, retry_after: int):  # retry_after is the number of seconds until the next analysis slot becomes available
         self.retry_after = retry_after
         super().__init__("the daily analysis limit has been reached.")
 
@@ -36,7 +36,7 @@ class UsageLimiter:
     Track analysis starts per IP using a persistent SQLite database.
     """
 
-    def __init__(self, db_path: str = USAGE_DB_PATH):
+    def __init__(self, db_path: str = USAGE_DB_PATH):  # db_path can be overridden for local tests
         self.db_path = str(db_path)
 
         # Create the parent directory when it does not already exist; in production, the mounted /data directory must be writable by the sherboa-user account (UID 10001)
@@ -48,7 +48,7 @@ class UsageLimiter:
         """
         Open a database connection with a bounded lock wait.
         """
-        return sqlite3.connect(
+        return sqlite3.connect(  # The connection is not thread-safe, but each request gets its own connection, so this is fine
             self.db_path,
             timeout=SQLITE_BUSY_TIMEOUT_SECONDS,
         )
@@ -57,7 +57,7 @@ class UsageLimiter:
         """
         Create the usage table and index if they do not exist.
         """
-        with self._connect() as connection:
+        with self._connect() as connection:  # Open a connection to the SQLite database
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS analysis_usage (
@@ -68,8 +68,7 @@ class UsageLimiter:
                 """
             )
 
-            # This index speeds up counting recent analyses for one IP
-            connection.execute(
+            connection.execute(  # This index speeds up counting recent analyses for one IP
                 """
                 CREATE INDEX IF NOT EXISTS idx_analysis_usage_ip_time
                 ON analysis_usage (client_ip, started_at)

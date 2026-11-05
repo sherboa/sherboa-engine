@@ -27,8 +27,8 @@ FRONTEND_URL = "https://sherboa.com"  # Authorized frontend origin for cross-ori
 ########################################################################################################################
 # APPLICATION INITIALIZATION
 ########################################################################################################################
-app = FastAPI()
-app.add_middleware(RateLimitMiddleware)
+app = FastAPI()  # Create a FastAPI application instance
+app.add_middleware(RateLimitMiddleware)  # Add a custom middleware to limit concurrent video analyses to one at a time, returning HTTP 429 if another analysis is already in progress
 usage_limiter = UsageLimiter()  # Persistent rolling-window quota shared across container recreations
 
 ########################################################################################################################
@@ -52,7 +52,7 @@ def home():  # Define the root endpoint function
 ########################################################################################################################
 # THUMBNAIL ENDPOINT
 ########################################################################################################################
-@app.get(
+@app.get(  # Define a GET endpoint for serving generated thumbnails
     "/thumbnails/{analysis_id}/{video_type}/{filename}",
     include_in_schema=False,
 )
@@ -108,7 +108,7 @@ def get_thumbnail(analysis_id: str, video_type: str, filename: str,):
     if not image_path.is_file():
         raise not_found
 
-    return FileResponse(
+    return FileResponse(  # Serve the requested thumbnail image as a file response with appropriate headers
         path=image_path,
         media_type="image/jpeg",
         headers={"Cache-Control": "private, max-age=3600"},
@@ -119,13 +119,13 @@ def get_thumbnail(analysis_id: str, video_type: str, filename: str,):
 ########################################################################################################################
 # VIDEO PREPARATION ENDPOINT
 ########################################################################################################################
-@app.post("/prepare")
+@app.post("/prepare")  # Define a POST endpoint for preparing videos and generating thumbnails
 def prepare_videos(reference: UploadFile = File(...), distorted: UploadFile = File(...),) -> dict:
     """
     Validate both videos and generate thumbnails without running quality metrics or consuming the daily analysis quota.
     """
 
-    if not reference.filename or not distorted.filename:
+    if not reference.filename or not distorted.filename:  # Error handling: check if both video files are provided
         raise HTTPException(
             status_code=400,
             detail="invalid input: both video files must be provided",
@@ -137,13 +137,13 @@ def prepare_videos(reference: UploadFile = File(...), distorted: UploadFile = Fi
     distorted.file.seek(0, 2)
     distorted_size = distorted.file.tell()
 
-    if reference_size > MAX_FILE_SIZE or distorted_size > MAX_FILE_SIZE:
+    if reference_size > MAX_FILE_SIZE or distorted_size > MAX_FILE_SIZE:  # Error handling: check if either video file exceeds the maximum allowed size
         raise HTTPException(
             status_code=413,
             detail=f"file size exceeds the limit of {MAX_FILE_SIZE / (1024 * 1024)} MB",
         )
 
-    if reference_size == 0 or distorted_size == 0:
+    if reference_size == 0 or distorted_size == 0:  # Error handling: check if both video files contain data
         raise HTTPException(
             status_code=400,
             detail="both video files must contain data",
@@ -155,16 +155,16 @@ def prepare_videos(reference: UploadFile = File(...), distorted: UploadFile = Fi
     analysis_dir = None
 
     try:
-        with tempfile.NamedTemporaryFile(suffix=".mp4") as ref_file:
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as ref_file:  # Create a temporary file for the reference video
             shutil.copyfileobj(reference.file, ref_file)
             ref_file.flush()
 
-            with tempfile.NamedTemporaryFile(suffix=".mp4") as dist_file:
+            with tempfile.NamedTemporaryFile(suffix=".mp4") as dist_file:  # Create a temporary file for the distorted video
                 shutil.copyfileobj(distorted.file, dist_file)
                 dist_file.flush()
 
                 try:
-                    if not is_valid_video(ref_file.name) or not is_valid_video(dist_file.name):
+                    if not is_valid_video(ref_file.name) or not is_valid_video(dist_file.name):  # Error handling: check if both video files are valid video files
                         raise HTTPException(
                             status_code=400,
                             detail="invalid video file",
@@ -173,7 +173,7 @@ def prepare_videos(reference: UploadFile = File(...), distorted: UploadFile = Fi
                     reference_width, reference_height = get_video_dimensions(ref_file.name)
                     distorted_width, distorted_height = get_video_dimensions(dist_file.name)
 
-                    if (reference_width, reference_height) != (
+                    if (reference_width, reference_height) != (  #Error handling: check if both video files have matching dimensions
                         distorted_width,
                         distorted_height,
                     ):
@@ -185,7 +185,7 @@ def prepare_videos(reference: UploadFile = File(...), distorted: UploadFile = Fi
                     reference_duration = get_video_duration(ref_file.name)
                     distorted_duration = get_video_duration(dist_file.name)
 
-                    if not are_durations_compatible(reference_duration, distorted_duration,):
+                    if not are_durations_compatible(reference_duration, distorted_duration,):  # Error handling: check if both video files have compatible durations
                         raise HTTPException(
                             status_code=400,
                             detail="video durations are not compatible",
@@ -194,49 +194,49 @@ def prepare_videos(reference: UploadFile = File(...), distorted: UploadFile = Fi
                     video_metadata = get_video_metadata(ref_file.name)
                     distorted_video_metadata = get_video_metadata(dist_file.name)
 
-                except TimeoutExpired:
+                except TimeoutExpired:  # ffprobe did not finish within its configured timeout
                     raise HTTPException(
                         status_code=504,
                         detail="video inspection timed out",
                     )
 
-                analysis_dir = thumbnails.create_analysis_thumbnail_dir()
+                analysis_dir = thumbnails.create_analysis_thumbnail_dir()  # Create a unique directory for storing thumbnails for this analysis
                 analysis_dir.mkdir(parents=False, exist_ok=False)
 
-                generating_marker = analysis_dir / ".generating"
+                generating_marker = analysis_dir / ".generating"  # Create a marker file to indicate that thumbnail generation is in progress
                 generating_marker.touch()
 
-                thumbnails.generate_thumbnails(
+                thumbnails.generate_thumbnails(  # Generate thumbnails for the reference video and store them in the "reference" subdirectory of the analysis directory
                     ref_file.name,
                     analysis_dir / "reference",
                 )
 
-                thumbnails.generate_thumbnails(
+                thumbnails.generate_thumbnails(  # Generate thumbnails for the distorted video and store them in the "distorted" subdirectory of the analysis directory
                     dist_file.name,
                     analysis_dir / "distorted",
                 )
 
-                generating_marker.unlink()
+                generating_marker.unlink()  # Remove the marker file to indicate that thumbnail generation is complete
 
-                return {
+                return {  # Return a JSON response containing the video metadata, analysis ID, and a flag indicating that thumbnails are available
                     "video": video_metadata,
                     "distorted_video": distorted_video_metadata,
                     "analysis_id": analysis_dir.name,
                     "thumbnails_available": True,
                 }
 
-    except HTTPException:
+    except HTTPException:  # Reraise HTTP exceptions without cleanup, as they are handled by FastAPI
         if analysis_dir is not None:
             shutil.rmtree(analysis_dir, ignore_errors=True)
         raise
 
-    except Exception as e:
+    except Exception as e:  # Catch any other exceptions that occur during video preparation and cleanup the analysis directory if it was created
         if analysis_dir is not None:
             shutil.rmtree(analysis_dir, ignore_errors=True)
 
         print(f"Video preparation failed: {e}", flush=True)
 
-        raise HTTPException(
+        raise HTTPException(  # Raise an HTTP 500 Internal Server Error with a generic error message indicating that video preparation failed
             status_code=500,
             detail="video preparation failed",
         )
@@ -342,7 +342,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
             # VIDEO INSPECTION AND VALIDATION
             ############################################################################################################
             try:
-                if not is_valid_video(ref_file.name) or not is_valid_video(dist_file.name):
+                if not is_valid_video(ref_file.name) or not is_valid_video(dist_file.name):  # Error handling #4: check if both video files are valid video files
                     raise HTTPException(
                         status_code=400,
                         detail="invalid video file"
@@ -351,7 +351,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
                 reference_width, reference_height = get_video_dimensions(ref_file.name)
                 distorted_width, distorted_height = get_video_dimensions(dist_file.name)
 
-                if (reference_width, reference_height) != (distorted_width, distorted_height):
+                if (reference_width, reference_height) != (distorted_width, distorted_height):  # Error handling #5: check if both video files have matching dimensions
                     raise HTTPException(
                         status_code=400,
                         detail="video dimensions must match"
@@ -361,12 +361,12 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
                 distorted_duration = get_video_duration(dist_file.name)
 
                 try:
-                    get_overlap_interval(
+                    get_overlap_interval(  # Error handling #6: check if both video files have compatible durations, considering the specified offset
                         reference_duration,
                         distorted_duration,
                         offset,
                     )
-                except ValueError as e:
+                except ValueError as e:  # Error handling: if the overlap interval cannot be determined due to incompatible durations, raise an HTTP 400 error with the exception message
                     raise HTTPException(
                         status_code=400,
                         detail=str(e),
@@ -425,7 +425,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
             content=csv_data,  # Return the generated CSV data as the response content
             media_type="text/csv",  # Set the media type of the response to "text/csv" to indicate that the response contains CSV data
             headers={
-                "Content-Disposition": "attachment; filename=results.csv"
+                "Content-Disposition": "attachment; filename=results.csv"  # Set the Content-Disposition header to specify the filename for the downloaded CSV file
             }
         )
 
@@ -492,7 +492,7 @@ def calculate_vmaf(request: Request, reference: UploadFile = File(...), distorte
     return {
         **result,  # Merge the computed VMAF, PSNR, and SSIM results with the video metadata into a single dictionary to be returned as the API response
         "video": video_metadata,  # Include the video metadata in the response under the "video" key
-        "distorted_video": distorted_video_metadata,
-        "analysis_id": analysis_id,
-        "thumbnails_available": thumbnails_available,
+        "distorted_video": distorted_video_metadata,  # Include the distorted video metadata in the response under the "distorted_video" key
+        "analysis_id": analysis_id,  # Include the unique analysis identifier in the response under the "analysis_id" key
+        "thumbnails_available": thumbnails_available,  # Include a flag indicating whether thumbnails are available for this analysis in the response under the "thumbnails_available" key
     }
