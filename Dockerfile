@@ -56,5 +56,6 @@ RUN useradd --system --uid 10001 --create-home sherboa-user \
 USER sherboa-user
 
 # Comando que se ejecutará cuando se inicie el contenedor:
-# uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=172.18.0.2 [El servidor acepta conexiones desde cualquier interfaz de red]
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=172.18.0.2"]
+# uvicorn main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=172.30.0.2 [El servidor acepta conexiones desde cualquier interfaz de red]
+# Confiar solo en headers forwardeados del reverse proxy Caddy
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=172.30.0.2"]
