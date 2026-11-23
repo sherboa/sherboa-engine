@@ -49,14 +49,17 @@ jobs:
       
       - name: Deploy to EC2 via SSM   # Use AWS Systems Manager (SSM) to deploy the newly built Docker image to the specified EC2 instance
         run: |
-          IMAGE_URI=557643338880.dkr.ecr.us-east-1.amazonaws.com/sherboa-engine   # Define the ECR repository URI for the sherboa-engine image
-          echo "Deploying Sherboa Engine with image: ${IMAGE_URI}:${{ github.sha }}"   # Log the image URI and tag being deployed for reference
-          echo "Deploying to EC2 instance: i-082236ea5c1088e9f"   # Log the EC2 instance ID where the deployment will occur for reference
-          echo "Using AWS region: us-east-1"   # Log the AWS region being used for the deployment for reference
-          echo "Using AWS role: arn:aws:iam::557643338880:role/SherboaGitHubActionsRole"   # Log the AWS role being assumed for the deployment for reference
-          echo "Using GitHub SHA: ${{ github.sha }}"   # Log the current Git commit SHA being used for the deployment for reference
-          echo "Using AWS CLI version: $(aws --version)"   # Log the AWS CLI version being used for the deployment for reference
-          IMAGE_TAG=${{ github.sha }}   # Define the image tag based on the current Git commit SHA for deployment
+          IMAGE_URI=557643338880.dkr.ecr.us-east-1.amazonaws.com/sherboa-engine
+          IMAGE_TAG=${{ github.sha }}
+          INSTANCE_ID="${{ vars.SHERBOA_EC2_INSTANCE_ID }}"
+          if [ -z "$INSTANCE_ID" ]; then
+            echo "ERROR: SHERBOA_EC2_INSTANCE_ID is not configured."
+            exit 1
+          fi
+
+          echo "Deploying Sherboa Engine: ${IMAGE_URI}:${IMAGE_TAG}"
+          echo "Deploying to EC2 instance: ${INSTANCE_ID}"
+          echo "Using AWS region: us-east-1"
 
           COMMANDS=$(jq -n \
             --arg image_uri "$IMAGE_URI" \
@@ -65,30 +68,21 @@ jobs:
               commands: [
                 "set -e",
                 "echo STEP: Authenticate with ECR",
-                "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin \($image_uri)",
+                "aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin \($image_uri)",
                 "echo STEP: Pull image \($image_tag)",
-                "docker pull \($image_uri):\($image_tag)",
-                "echo STEP: Ensure Docker network",
-                "docker network inspect sherboa-network >/dev/null 2>&1 || docker network create sherboa-network",
-                "echo STEP: Prepare persistent data directory",
-                "mkdir -p /srv/sherboa-data",
-                "chown 10001:10001 /srv/sherboa-data",
-                "chmod 750 /srv/sherboa-data",
-                "echo STEP: Remove previous container",
-                "docker rm -f sherboa-engine 2>/dev/null || true",
-                "echo STEP: Start new container",
-                "docker run -d --name sherboa-engine --restart unless-stopped --network sherboa-network -v /srv/sherboa-data:/data \($image_uri):\($image_tag)",
-                "echo STEP: Check API health",
-                "for attempt in 1 2 3 4 5 6 7 8 9 10; do echo \"Health check attempt $attempt/10\"; if docker exec sherboa-engine python -c \"import urllib.request; r=urllib.request.urlopen(\\\"http://127.0.0.1:8000/\\\", timeout=2); print(r.status)\"; then echo API_health_check_passed; break; else echo \"Health check attempt $attempt failed\"; fi; sleep 2; done",
-                "docker exec sherboa-engine python -c \"import urllib.request; r=urllib.request.urlopen(\\\"http://127.0.0.1:8000/\\\", timeout=2); print(r.status)\" || { echo API_health_check_failed; docker logs --tail 80 sherboa-engine; exit 1; }",
-                "echo STEP: Prune unused Docker images",
-                "docker image prune -af",
-                "echo STEP: Deployment commands completed"
+                "sudo env IMAGE_TAG=\($image_tag) docker compose -f /opt/sherboa/sherboa-engine/compose.yml pull",
+                "echo STEP: Deploy with Docker Compose",
+                "sudo env IMAGE_TAG=\($image_tag) docker compose -f /opt/sherboa/sherboa-engine/compose.yml up -d",
+                "echo STEP: Wait for Engine health",
+                "for attempt in $(seq 1 60); do STATUS=$(sudo docker inspect --format='{{.State.Health.Status}}' sherboa-engine 2>/dev/null || echo missing); echo \"Health check attempt $attempt/60: $STATUS\"; if [ \"$STATUS\" = healthy ]; then echo API_health_check_passed; exit 0; fi; if [ \"$STATUS\" = unhealthy ]; then sudo docker logs --tail 80 sherboa-engine; exit 1; fi; sleep 2; done",
+                "echo API_health_check_failed",
+                "sudo docker logs --tail 80 sherboa-engine",
+                "exit 1"
               ]
             }')
 
           COMMAND_ID=$(aws ssm send-command \
-            --instance-ids i-082236ea5c1088e9f \
+            --instance-ids "$INSTANCE_ID" \
             --document-name AWS-RunShellScript \
             --comment "Deploy Sherboa ${IMAGE_TAG}" \
             --parameters "$COMMANDS" \
@@ -97,19 +91,53 @@ jobs:
 
           echo "SSM Command ID: $COMMAND_ID"   # Log the SSM Command ID for reference and tracking its execution status
 
-          if aws ssm wait command-executed \
-            --command-id "$COMMAND_ID" \
-            --instance-id i-082236ea5c1088e9f   # Specify the EC2 instance ID where the command was executed to wait for its execution status
-          then
-            echo "SSM deployment succeeded."   # Log a success message indicating that the SSM deployment completed successfully on the specified EC2 instance
-          else
-            echo "SSM deployment failed. Fetching invocation details..."   # Log a failure message indicating that the SSM deployment failed and that the invocation details will be fetched for troubleshooting
 
-            aws ssm get-command-invocation \
+          echo "Waiting for SSM deployment to finish..."
+
+          for attempt in $(seq 1 60); do
+            STATUS=$(aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
-              --instance-id i-082236ea5c1088e9f \
-              --query '{Status:Status,StatusDetails:StatusDetails,StandardOutput:StandardOutputContent,StandardError:StandardErrorContent}' \
-              --output json   # Output the fetched invocation details in JSON format for easier readability and analysis of the deployment failure
+              --instance-id "$INSTANCE_ID" \
+              --query 'Status' \
+              --output text 2>/dev/null || echo "Pending")
 
-            exit 1
-          fi
+            echo "SSM status check $attempt/60: $STATUS"
+
+            case "$STATUS" in
+              Success)
+                echo "SSM deployment succeeded."
+
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id "$INSTANCE_ID" \
+                  --query '{Status:Status,StandardOutput:StandardOutputContent}' \
+                  --output json
+
+                exit 0
+                ;;
+
+              Failed|Cancelled|TimedOut)
+                echo "SSM deployment failed. Fetching invocation details..."
+
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id "$INSTANCE_ID" \
+                  --query '{Status:Status,StatusDetails:StatusDetails,StandardOutput:StandardOutputContent,StandardError:StandardErrorContent}' \
+                  --output json
+
+                exit 1
+                ;;
+            esac
+
+            sleep 5
+          done
+
+          echo "ERROR: SSM deployment timed out after approximately 180 seconds."
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,StatusDetails:StatusDetails,StandardOutput:StandardOutputContent,StandardError:StandardErrorContent}' \
+            --output json || true
+
+          exit 1
